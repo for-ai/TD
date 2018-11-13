@@ -29,7 +29,6 @@ def get_basic(params, lr):
       actvn = get_activation(params)
       x = features["inputs"]
       batch_size = tf.shape(x)[0]
-      x = tf.contrib.layers.flatten(x)
 
       nonzero = 0
       activations = []
@@ -58,7 +57,7 @@ def get_basic(params, lr):
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-      loss = tf.losses.softmax_cross_entropy(labels, x)
+      loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=x)
       if params.smallify > 0.0:
         loss += model_utils.switch_loss() * params.smallify
 

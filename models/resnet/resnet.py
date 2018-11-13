@@ -1,5 +1,7 @@
 import tensorflow as tf
 import numpy as np
+
+from ..utils import dropouts
 from ..utils.activations import get_activation
 from ..utils.dropouts import get_dropout, smallify_dropout
 from ..utils.initializations import get_init
@@ -19,7 +21,6 @@ def get_resnet(hparams, lr):
           Args:
             params: a HParams object containing values for fields:
               use_bottleneck: bool to bottleneck the network
-              relu_leakiness: leakiness factor for relu units
               num_residual_units: number of residual units
               num_classes: number of classes
               batch_size: batch size
@@ -32,23 +33,48 @@ def get_resnet(hparams, lr):
 
     is_training = mode == tf.estimator.ModeKeys.TRAIN
 
+    def quantize(x, hparams, is_training):
+      if hparams.dropout_type is not None and any(
+          n in hparams.dropout_type
+          for n in ["bitrot", "binarize", "exprot", "fixed_point"]):
+        drop_fn = dropouts.get_dropout(hparams.dropout_type)
+        x = drop_fn(x, hparams, is_training)
+      return x
+
     def _residual(x, out_filter, stride, projection=False):
       """Residual unit with 2 sub layers."""
+      is_variational = hparams.dropout_type is not None and "variational" in hparams.dropout_type
 
       orig_x = x
+      if not is_variational:
+        x = model_utils.batch_norm(x, hparams, is_training)
+        x = tf.nn.relu(x)
+      if projection:
+        orig_x = model_utils.conv(
+            x,
+            1,
+            out_filter,
+            hparams,
+            is_training=is_training,
+            strides=stride,
+            name="shortcut")
+        orig_x = quantize(orig_x, hparams, is_training)
 
       with tf.variable_scope('sub1'):
         x = model_utils.conv(
-            orig_x,
+            x,
             3,
             out_filter,
             hparams,
             is_training=is_training,
             strides=stride,
-            name='conv1',
-            schit_layer=hasattr(hparams, 'lipschitz_constant'))
-        x = model_utils.batch_norm(x, is_training)
+            name='conv1')
+
+        x = quantize(x, hparams, is_training)
+        x = model_utils.batch_norm(x, hparams, is_training)
+        x = quantize(x, hparams, is_training)
         x = tf.nn.relu(x)
+
       with tf.variable_scope('sub2'):
         x = model_utils.conv(
             x,
@@ -57,30 +83,67 @@ def get_resnet(hparams, lr):
             hparams,
             is_training=is_training,
             strides=[1, 1, 1, 1],
-            name='conv2',
-            schit_layer=hasattr(hparams, 'lipschitz_constant'))
+            name='conv2')
+
+      x = quantize(x, hparams, is_training)
+      x += orig_x
+      x = quantize(x, hparams, is_training)
+
+      return x
+
+    def _bottleneck_residual(x, out_filter, stride, projection=False):
+      """Residual unit with 3 sub layers."""
+      is_variational = hparams.dropout_type is not None and "variational" in hparams.dropout_type
+      orig_x = x
+      if not is_variational:
+        x = model_utils.batch_norm(x, hparams, is_training)
+        x = tf.nn.relu(x)
 
       if projection:
         orig_x = model_utils.conv(
-            orig_x,
+            x,
             1,
-            out_filter,
+            4 * out_filter,
             hparams,
             is_training=is_training,
             strides=stride,
             name="shortcut")
+        orig_x = quantize(orig_x, hparams, is_training)
 
-      if hasattr(hparams, 'lipschitz_constant') and hasattr(
-          hparams, 'multiply_identity') and hparams.multiply_identity:
-        orig_x = hparams.lipschitz_constant * orig_x
-
-      x += orig_x
-      if hparams.dropout_type is not None and not "variational" in hparams.dropout_type:
-        x = model_utils.batch_norm(x, is_training)
+      with tf.variable_scope('sub1'):
+        x = model_utils.conv(
+            x,
+            1,
+            out_filter,
+            hparams,
+            is_training=is_training,
+            strides=[1, 1, 1, 1],
+            name='conv1')
+        x = model_utils.batch_norm(x, hparams, is_training)
         x = tf.nn.relu(x)
+      with tf.variable_scope('sub2'):
+        x = model_utils.conv(
+            x,
+            3,
+            out_filter,
+            hparams,
+            is_training=is_training,
+            strides=stride,
+            name='conv2')
+        x = model_utils.batch_norm(x, hparams, is_training)
+        x = tf.nn.relu(x)
+      with tf.variable_scope('sub3'):
+        x = model_utils.conv(
+            x,
+            1,
+            4 * out_filter,
+            hparams,
+            is_training=is_training,
+            strides=[1, 1, 1, 1],
+            name='conv3')
 
       tf.logging.debug('image after unit %s', x.get_shape())
-      return x
+      return orig_x + x
 
     def _l1():
       """L1 weight decay loss."""
@@ -96,20 +159,25 @@ def get_resnet(hparams, lr):
 
     def _fully_connected(x, out_dim):
       """FullyConnected layer for final output."""
-      x = tf.reshape(x, [hparams.batch_size, 128])
       prev_dim = np.product(x.get_shape().as_list()[1:])
+      x = tf.reshape(x, [hparams.batch_size, prev_dim])
       w = tf.get_variable('DW', [prev_dim, out_dim])
       b = tf.get_variable(
-          'biases', [out_dim], initializer=tf.constant_initializer())
+          'biases', [out_dim], initializer=tf.zeros_initializer())
       return tf.nn.xw_plus_b(x, w, b)
 
     def _global_avg_pool(x):
       assert x.get_shape().ndims == 4
-      return tf.reduce_mean(x, [1, 2])
+      if hparams.data_format == "channels_last":
+        return tf.reduce_mean(x, [1, 2])
+      return tf.reduce_mean(x, [2, 3])
 
     def _stride_arr(stride):
       """Map a stride scalar to the stride array for tf.nn.conv2d."""
-      return [1, stride, stride, 1]
+      if hparams.data_format == "channels_last":
+        return [1, stride, stride, 1]
+
+      return [1, 1, stride, stride]
 
     if mode == ModeKeys.PREDICT or mode == ModeKeys.ATTACK:
       if "labels" in features:
@@ -117,46 +185,65 @@ def get_resnet(hparams, lr):
 
     with tf.variable_scope("resnet", initializer=get_init(hparams)):
       hparams.mode = mode
+      strides = [1, 2, 2, 2]
+      res_func = (_residual
+                  if not hparams.use_bottleneck else _bottleneck_residual)
+      filters = hparams.residual_filters
+      large_input = hparams.input_shape[0] > 32
+
       # 3 and 16 picked from example implementation
       with tf.variable_scope('init'):
         x = features["inputs"]
+        strd = _stride_arr(2) if large_input else _stride_arr(1)
         x = model_utils.conv(
             x,
-            3,
-            16,
+            7,
+            filters[0],
             hparams,
-            strides=_stride_arr(1),
+            strides=strd,
             dropout=False,
             name='init_conv')
+        x = quantize(x, hparams, is_training)
 
-      strides = [1, 2, 2]
-      res_func = _residual
-      filters = [16, 32, 64, 128]
+        if large_input:
+          x = tf.layers.max_pooling2d(
+              inputs=x,
+              pool_size=3,
+              strides=2,
+              padding="SAME",
+              data_format=hparams.data_format)
 
       with tf.variable_scope('unit_1_0'):
         x = res_func(x, filters[1], _stride_arr(strides[0]), True)
 
-      for i in six.moves.range(1, hparams.num_residual_units):
+      for i in range(1, hparams.residual_units[0]):
         with tf.variable_scope('unit_1_%d' % i):
           x = res_func(x, filters[1], _stride_arr(1), False)
 
       with tf.variable_scope('unit_2_0'):
         x = res_func(x, filters[2], _stride_arr(strides[1]), True)
 
-      for i in six.moves.range(1, hparams.num_residual_units):
+      for i in range(1, hparams.residual_units[1]):
         with tf.variable_scope('unit_2_%d' % i):
           x = res_func(x, filters[2], _stride_arr(1), False)
 
       with tf.variable_scope('unit_3_0'):
         x = res_func(x, filters[3], _stride_arr(strides[2]), True)
 
-      for i in six.moves.range(1, hparams.num_residual_units):
+      for i in range(1, hparams.residual_units[2]):
         with tf.variable_scope('unit_3_%d' % i):
           x = res_func(x, filters[3], _stride_arr(1), False)
 
+      if len(filters) == 5:
+        with tf.variable_scope('unit_4_0'):
+          x = res_func(x, filters[4], _stride_arr(strides[3]), True)
+        for i in range(1, hparams.residual_units[3]):
+          with tf.variable_scope('unit_4_%d' % i):
+            x = res_func(x, filters[4], _stride_arr(1), False)
+      x = model_utils.batch_norm(x, hparams, is_training)
+      x = tf.nn.relu(x)
+
       with tf.variable_scope('unit_last'):
-        x = model_utils.batch_norm(x, is_training)
-        x = tf.nn.relu(x)
         x = _global_avg_pool(x)
 
       with tf.variable_scope('logit'):
@@ -174,8 +261,8 @@ def get_resnet(hparams, lr):
             })
 
       with tf.variable_scope('costs'):
-        xent = tf.losses.softmax_cross_entropy(
-            onehot_labels=labels, logits=logits)
+        xent = tf.losses.sparse_softmax_cross_entropy(
+            labels=labels, logits=logits)
         cost = tf.reduce_mean(xent, name='xent')
         if is_training:
           if hparams.dropout_type and "variational" in hparams.dropout_type:
@@ -189,14 +276,13 @@ def get_resnet(hparams, lr):
 
           if hparams.logit_squeezing:
             cost += hparams.logit_squeezing * tf.reduce_mean(logits**2)
+            tf.summary.scalar(
+                "avg_logit", tf.reduce_mean(tf.reduce_max(tf.abs(logits), -1)))
 
           if hparams.clp:
             cost += hparams.clp * tf.reduce_mean(
                 (logits[:hparams.batch_size // 2] -
                  logits[hparams.batch_size // 2:])**2)
-
-          tf.summary.scalar("avg_logit",
-                            tf.reduce_mean(tf.reduce_max(tf.abs(logits), -1)))
 
           cost += _l1()
 
@@ -241,7 +327,6 @@ def get_resnet(hparams, lr):
 
     # Summaries
     # ========================
-    tf.summary.scalar("louizos_cost", hparams.louizos_cost)
     tf.summary.scalar("total_nonzero", model_utils.nonzero_count())
     all_weights = tf.concat(
         [

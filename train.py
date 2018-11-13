@@ -1,4 +1,4 @@
-import shutil
+import cloud
 import os
 import sys
 import subprocess
@@ -6,6 +6,7 @@ import random
 import tensorflow as tf
 import numpy as np
 import time
+import logging
 
 from .hparams.registry import get_hparams
 from .models.registry import get_model
@@ -18,26 +19,13 @@ from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 
 
 def init_flags():
-  tf.flags.DEFINE_string("model", None, "Which model to use.")
-  tf.flags.DEFINE_string("data", None, "Which data to use.")
-  tf.flags.DEFINE_string("env", "local", "Which environment to use.")
-  tf.flags.DEFINE_string("hparams", None, "Which hparams to use.")
+  tf.flags.DEFINE_string("env", None, "Which environment to use.")  # required
+  tf.flags.DEFINE_string("hparams", None, "Which hparams to use.")  # required
+  # Utility flags
   tf.flags.DEFINE_string("hparam_override", "",
                          "Run-specific hparam settings to use.")
-  tf.flags.DEFINE_string("output_dir", None, "The output directory.")
-  tf.flags.DEFINE_string("data_dir", None, "The data directory.")
-  tf.flags.DEFINE_integer("train_steps", None,
-                          "Number of training steps to perform.")
-  tf.flags.DEFINE_integer("eval_steps", None,
-                          "Number of evaluation steps to perform.")
-  tf.flags.DEFINE_integer("eval_every", 1000,
-                          "Number of steps between evaluations.")
-  tf.flags.DEFINE_integer("copies", 1, "Number of copies of this run.")
   tf.flags.DEFINE_boolean("fresh", False, "Remove output_dir before running.")
-  tf.flags.DEFINE_string("train_name", "data-train*",
-                         "The train dataset file name.")
-  tf.flags.DEFINE_string("test_name", "data-eval*",
-                         "The test dataset file name.")
+  tf.flags.DEFINE_integer("seed", None, "Random seed.")
 
   # TPU flags
   tf.flags.DEFINE_string("tpu_name", "", "Name of TPU(s)")
@@ -51,15 +39,23 @@ def init_flags():
   tf.flags.DEFINE_boolean(
       "tpu_summarize", False, "Save summaries for TensorBoard. "
       "Warning: this will slow down execution.")
+  tf.flags.DEFINE_boolean("tpu_dedicated", False,
+                          "Do not use preemptible TPUs.")
+  # Legacy flags
+  flags.legacy_flags()
+
+
+tf.logging.set_verbosity(tf.logging.INFO)
+FLAGS = None
 
 
 def init_random_seeds():
-  tf.set_random_seed(1234)
-  random.seed(1234)
-  np.random.seed(1234)
+  tf.set_random_seed(FLAGS.seed)
+  random.seed(FLAGS.seed)
+  np.random.seed(FLAGS.seed)
 
 
-def init_model(FLAGS, i):
+def init_model(i):
   flags.validate_flags(FLAGS)
 
   tf.reset_default_graph()
@@ -84,24 +80,10 @@ def init_model(FLAGS, i):
   return hparams
 
 
-def _run(FLAGS, i):
-  """Run training, evaluation and inference."""
-  hparams = init_model(FLAGS, i)
-  hparams.output_dir = os.path.join(hparams.output_dir, str(i))
-  if tf.gfile.Exists(hparams.output_dir) and FLAGS.fresh:
-    tf.gfile.DeleteRecursively(hparams.output_dir)
-
-  if not tf.gfile.Exists(hparams.output_dir):
-    tf.gfile.MakeDirs(hparams.output_dir)
-  model_fn = get_model(hparams)
-  train_input_fn, eval_input_fn, test_input_fn = get_input_fns(hparams)
-
-  gpu_config = tf.ConfigProto(allow_soft_placement=True)
-  gpu_config.gpu_options.allow_growth = True
-
+def construct_estimator(model_fn, hparams, tpu=None):
   if hparams.use_tpu:
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
-        tpu=FLAGS.tpu_name)
+        tpu=tpu.name)
     master = tpu_cluster_resolver.get_master()
     config = tpu_config.RunConfig(
         master=master,
@@ -121,13 +103,45 @@ def _run(FLAGS, i):
         train_batch_size=hparams.batch_size,
         eval_batch_size=hparams.batch_size)
   else:
+    gpu_config = tf.ConfigProto(allow_soft_placement=True)
+    gpu_config.gpu_options.allow_growth = True
     run_config = tf.estimator.RunConfig(
         save_checkpoints_steps=FLAGS.eval_every, session_config=gpu_config)
-
     estimator = tf.estimator.Estimator(
         model_fn=tf.contrib.estimator.replicate_model_fn(model_fn),
         model_dir=hparams.output_dir,
         config=run_config)
+
+  return estimator
+
+
+def _run(i):
+  """Run training, evaluation and inference."""
+  hparams = init_model(i)
+  hparams.output_dir = os.path.join(hparams.output_dir, str(i))
+  original_batch_size = hparams.batch_size
+  if tf.gfile.Exists(hparams.output_dir) and FLAGS.fresh:
+    tf.gfile.DeleteRecursively(hparams.output_dir)
+
+  if not tf.gfile.Exists(hparams.output_dir):
+    tf.gfile.MakeDirs(hparams.output_dir)
+  model_fn = get_model(hparams)
+  train_input_fn, eval_input_fn, test_input_fn = get_input_fns(hparams)
+
+  tpu = None
+  if hparams.use_tpu:
+    cloud.instance.tpu.clean()
+    tpu = cloud.instance.tpu.get(preemptible=not FLAGS.tpu_dedicated)
+
+  estimator = construct_estimator(model_fn, hparams, tpu)
+
+  if not hparams.use_tpu:
+    features, labels = train_input_fn()
+    sess = tf.Session()
+    tf.train.get_or_create_global_step()
+
+    model_fn(features, labels, tf.estimator.ModeKeys.TRAIN)
+    sess.run(tf.global_variables_initializer())
 
   # output metadata about the run
   with tf.gfile.GFile(os.path.join(hparams.output_dir, 'hparams.txt'),
@@ -135,31 +149,39 @@ def _run(FLAGS, i):
     hparams_file.write("{}\n".format(time.time()))
     hparams_file.write("{}\n".format(str(hparams)))
 
-  k = 0
-  while k <= int(hparams.train_steps / FLAGS.eval_every):
-    estimator.train(train_input_fn, steps=FLAGS.eval_every)
-    estimator.evaluate(eval_input_fn, steps=hparams.eval_steps, name="eval")
-    estimator.evaluate(test_input_fn, steps=hparams.eval_steps, name="test")
+  def loop(steps=FLAGS.eval_every):
+    estimator.train(train_input_fn, steps=steps)
+    if eval_input_fn:
+      estimator.evaluate(eval_input_fn, steps=hparams.eval_steps, name="eval")
+    if test_input_fn:
+      estimator.evaluate(test_input_fn, steps=hparams.eval_steps, name="test")
 
-    k = int(estimator.get_variable_value("global_step") / FLAGS.eval_every)
-    k += 1
+  loop(1)
 
+  steps = estimator.get_variable_value("global_step")
+  k = steps * original_batch_size / float(hparams.epoch_size)
+  while k <= hparams.train_epochs:
+    tf.logging.info("Beginning epoch %f / %d" % (k, hparams.train_epochs))
+    if tpu and not tpu.usable:
+      tpu.delete(async=True)
+      tpu = cloud.instance.tpu.get(preemptible=not FLAGS.tpu_dedicated)
+      estimator = construct_estimator(model_fn, hparams, tpu)
 
-def init():
-  init_random_seeds()
-  init_flags()
+    loop()
+    steps = estimator.get_variable_value("global_step")
+    k = steps * original_batch_size / float(hparams.epoch_size)
 
 
 def main(_):
+  global FLAGS
   FLAGS = tf.app.flags.FLAGS
 
-  for i in range(FLAGS.copies):
-    _run(FLAGS, i)
-
-    if FLAGS.env in ['gcp', 'tpu']:
-      shut_down(FLAGS)
+  init_random_seeds()
+  if FLAGS.env != "local":
+    cloud.connect()
+  run_job()
 
 
 if __name__ == "__main__":
-  init()
+  init_flags()
   tf.app.run()

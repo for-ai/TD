@@ -1,4 +1,5 @@
 import tensorflow as tf
+from . import imagenet_augs 
 
 _AUGMENTATIONS = dict()
 
@@ -19,7 +20,7 @@ def get_augmentation(name, params, training):
 
 
 @register
-def image_augmentation(image, label, training, params):
+def cifar_augmentation(image, label, training, params):
   """Image augmentation suitable for CIFAR-10/100.
   As described in https://arxiv.org/pdf/1608.06993v3.pdf (page 5).
   Args:
@@ -35,6 +36,20 @@ def image_augmentation(image, label, training, params):
   image = tf.image.per_image_standardization(image)
   return image, label
 
+@register
+def imagenet_augmentation(image, label, training, params):
+  """Imagenet augmentations.
+  Args:
+    images: a Tensor.
+  Returns:
+    Tensor of the same shape as images.
+  """
+  if training:
+    image = imagenet_augs.preprocess_for_train(image, params.input_shape[0])
+  else:
+    image = imagenet_augs.preprocess_for_eval(image, params.input_shape[0])
+  return image, label
+
 
 @register
 def load_images(example, training, params):
@@ -47,10 +62,17 @@ def load_images(example, training, params):
   example = tf.parse_single_example(example, data_fields_to_features)
   image = example["image/encoded"]
   image = tf.image.decode_png(image, channels=params.channels, dtype=tf.uint8)
-  image = tf.reshape(image, params.input_shape)
-  image = tf.to_float(image) / 255.
+  image = tf.to_float(image)
 
   label = tf.to_int32(example["image/class/label"])
-  label = tf.one_hot(label, params.output_shape[-1])
 
+  return image, label
+
+@register
+def set_shapes(image, label, training, params):
+  image = tf.reshape(image, params.input_shape)
+  return image, label
+@register
+def transpose(image, label, training, params):
+  image = tf.transpose(image, [2, 0, 1])
   return image, label

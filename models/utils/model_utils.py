@@ -35,7 +35,7 @@ def collect_vars(fn):
   return outputs, list(new_vars)
 
 
-def dense(x, units, hparams, is_training):
+def dense(x, units, hparams, is_training, dropout=True):
   with tf.variable_scope(None, default_name="dense") as scope:
     w = tf.get_variable("kernel", shape=[x.shape[1], units], dtype=tf.float32)
     b = tf.get_variable(
@@ -43,7 +43,7 @@ def dense(x, units, hparams, is_training):
         shape=[units],
         dtype=tf.float32,
         initializer=tf.zeros_initializer())
-    if hparams.dropout_type is not None and is_training:
+    if dropout and hparams.dropout_type is not None and is_training:
       w = dropouts.get_dropout(hparams.dropout_type)(w, hparams, is_training)
 
     w = tf.identity(w, name="post_dropout")
@@ -64,8 +64,15 @@ def conv(x,
          schit_layer=False):
   """Convolution."""
   with tf.variable_scope(name, default_name="conv2d"):
+    if hparams.data_format == "channels_last":
+      in_filters = x.shape[-1]
+    else:
+      in_filters = x.shape[1]
+
     kernel = tf.get_variable(
-        'DW', [filter_size, filter_size, x.shape[-1], out_filters], tf.float32)
+        'DW', [filter_size, filter_size, in_filters, out_filters], tf.float32)
+
+    use_dropout = dropout and hparams.dropout_type is not None
 
     # schit layer
     if schit_layer:
@@ -78,7 +85,7 @@ def conv(x,
           scale) * kernel / tf.norm(
               tf.reshape(kernel, shape=[-1, kernel.shape[-1]]), axis=0)
 
-    if hparams.dropout_type is not None and dropout:
+    if use_dropout:
       dropout_fn = dropouts.get_dropout(hparams.dropout_type)
 
       if hparams.dropout_type == "targeted_ard":
@@ -103,7 +110,9 @@ def conv(x,
           conved = tf.identity(conved, name="post_dropout")
           return conved
 
-    conv = tf.nn.conv2d(x, kernel, strides, padding=padding)
+    data_format = "NHWC" if hparams.data_format == "channels_last" else "NCHW"
+    conv = tf.nn.conv2d(
+        x, kernel, strides, padding=padding, data_format=data_format)
 
     if activation:
       conv = activation(conv)
@@ -145,7 +154,7 @@ def weight_noise(hparams, learning_rate):
   return noise_ops
 
 
-def weight_decay(hparams, skip_biases=True):
+def weight_decay(hparams, only_features=True):
   """Apply weight decay to vars in var_list."""
   if not hparams.weight_decay_rate:
     return 0.
@@ -157,10 +166,12 @@ def weight_decay(hparams, skip_biases=True):
   weight_decays = []
   for v in var_list:
     # Weight decay.
-    # This is a heuristic way to detect biases that works for main tf.layers.
-    is_bias = len(v.shape.as_list()) == 1 and v.name.endswith("bias:0")
-    if not (skip_biases and is_bias):
-      v_loss = tf.nn.l2_loss(v)
+    is_feature = "DW" in v.name or "kernel" in v.name
+    if (not only_features) or is_feature:
+      if hparams.initializer == "hadamard_unscaled":
+        v_loss = tf.reduce_sum((tf.abs(v) - 1)**2) / 2
+      else:
+        v_loss = tf.nn.l2_loss(v)
       weight_decays.append(v_loss)
 
   return tf.reduce_sum(weight_decays, axis=0) * hparams.weight_decay_rate
@@ -243,12 +254,18 @@ def standardize_images(x):
     return x
 
 
-def batch_norm(inputs, training):
+def batch_norm(inputs, hparams, training):
   """Performs a batch normalization using a standard set of parameters."""
   # We set fused=True for a significant performance boost. See
   # https://www.tensorflow.org/performance/performance_guide#common_fused_ops
+  if hparams.data_format == "channels_first":
+    axis = 1
+  else:
+    axis = -1
+
   return tf.layers.batch_normalization(
       inputs=inputs,
+      axis=axis,
       momentum=0.997,
       epsilon=0.001,
       center=True,
@@ -258,27 +275,37 @@ def batch_norm(inputs, training):
 
 
 def louizos_complexity_cost(params):
-  list_of_gates = tf.concat([
-      tf.reshape(w, [-1])
+  gates = {
+      w.name.strip(":0"): w
       for w in tf.trainable_variables()
       if "gates" in w.name
-  ], 0)
+  }
+  names = list(gates.keys())
+  concat_gates = tf.concat([tf.reshape(gates[name], [-1]) for name in names],
+                           0)
   if params.dropout_type == "louizos_weight":
     complexity_cost = tf.nn.sigmoid(
-        list_of_gates - params.louizos_beta * tf.
-        log(-1 * params.louizos_gamma / params.louizos_zeta))
+        concat_gates - params.louizos_beta *
+        tf.log(-1 * params.louizos_gamma / params.louizos_zeta))
   elif params.dropout_type == "louizos_unit":
     reshaped_gates = [
-        tf.reshape(w, [-1, w.shape[-1]])
-        for w in tf.trainable_variables()
-        if "gates" in w.name
+        tf.reshape(gates[name], [-1, gates[name].shape[-1]]) for name in names
     ]
-    group_sizes = tf.concat(
-        [[w.shape.as_list()[0]] * reduce(operator.mul, w.shape.as_list(), 1)
-         for w in reshaped_gates], 0)
+
+    parameters = []
+    for name in names:
+      g_name = name[:-len("louizos/gates")] + "DW"
+      g = tf.contrib.framework.get_unique_variable(g_name)
+      parameters.extend(
+          [reduce(operator.mul,
+                  g.shape.as_list()[:-1], 1)] * g.shape.as_list()[-1])
+    group_sizes = tf.constant(parameters)
+    assert group_sizes.shape[0] == concat_gates.shape[0], "{} != {}".format(
+        group_sizes.shape[0], concat_gates.shape[0])
+
     complexity_cost = tf.cast(group_sizes, tf.float32) * tf.nn.sigmoid(
-        list_of_gates - params.louizos_beta * tf.
-        log(-1 * params.louizos_gamma / params.louizos_zeta))
+        concat_gates - params.louizos_beta *
+        tf.log(-1 * params.louizos_gamma / params.louizos_zeta))
   return tf.reduce_sum(complexity_cost)
 
 
@@ -367,12 +394,12 @@ def combine(rand_uniform, rand_bernoulli, num_branches):
 
 
 def model_top(labels, preds, cost, lr, mode, hparams):
-  tf.summary.scalar("acc",
-                    tf.reduce_mean(
-                        tf.to_float(
-                            tf.equal(
-                                tf.argmax(labels, axis=-1),
-                                tf.argmax(preds, axis=-1)))))
+  tf.summary.scalar(
+      "acc",
+      tf.reduce_mean(
+          tf.to_float(
+              tf.equal(labels, tf.argmax(preds, axis=-1,
+                                         output_type=tf.int32)))))
   tf.summary.scalar("loss", cost)
 
   gs = tf.train.get_global_step()
@@ -398,7 +425,7 @@ def model_top(labels, preds, cost, lr, mode, hparams):
       return {
           "acc":
           tf.metrics.accuracy(
-              labels=tf.argmax(l, -1), predictions=tf.argmax(p, -1)),
+              labels=l, predictions=tf.argmax(p, -1, output_type=tf.int32)),
       }
 
     host_call = None
@@ -422,8 +449,8 @@ def model_top(labels, preds, cost, lr, mode, hparams):
       eval_metric_ops={
           "acc":
           tf.metrics.accuracy(
-              labels=tf.argmax(labels, axis=-1),
-              predictions=tf.argmax(preds, axis=-1)),
+              labels=labels,
+              predictions=tf.argmax(preds, axis=-1, output_type=tf.int32)),
       },
       loss=cost,
       train_op=train_op)

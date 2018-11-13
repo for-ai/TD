@@ -39,12 +39,12 @@ def get_vgg(hparams, lr):
       conv1_1 = model_utils.conv(
           inputs, 3, 64, hparams, name="conv1_1", is_training=is_training)
 
-      conv1_1 = model_utils.batch_norm(conv1_1, is_training)
+      conv1_1 = model_utils.batch_norm(conv1_1, hparams, is_training)
       conv1_1 = tf.nn.relu(conv1_1)
 
       conv1_2 = model_utils.conv(
           conv1_1, 3, 64, hparams, name="conv1_2", is_training=is_training)
-      conv1_2 = model_utils.batch_norm(conv1_2, is_training)
+      conv1_2 = model_utils.batch_norm(conv1_2, hparams, is_training)
       conv1_2 = tf.nn.relu(conv1_2)
 
       pool1 = tf.layers.max_pooling2d(
@@ -52,12 +52,12 @@ def get_vgg(hparams, lr):
 
       conv2_1 = model_utils.conv(
           pool1, 3, 128, hparams, name="conv2_1", is_training=is_training)
-      conv2_1 = model_utils.batch_norm(conv2_1, is_training)
+      conv2_1 = model_utils.batch_norm(conv2_1, hparams, is_training)
       conv2_1 = tf.nn.relu(conv2_1)
 
       conv2_2 = model_utils.conv(
           conv2_1, 3, 128, hparams, name="conv2_2", is_training=is_training)
-      conv2_2 = model_utils.batch_norm(conv2_2, is_training)
+      conv2_2 = model_utils.batch_norm(conv2_2, hparams, is_training)
       conv2_2 = tf.nn.relu(conv2_2)
 
       pool2 = tf.layers.max_pooling2d(
@@ -65,17 +65,17 @@ def get_vgg(hparams, lr):
 
       conv3_1 = model_utils.conv(
           pool2, 3, 256, hparams, name="conv3_1", is_training=is_training)
-      conv3_1 = model_utils.batch_norm(conv3_1, is_training)
+      conv3_1 = model_utils.batch_norm(conv3_1, hparams, is_training)
       conv3_1 = tf.nn.relu(conv3_1)
 
       conv3_2 = model_utils.conv(
           conv3_1, 3, 256, hparams, name="conv3_2", is_training=is_training)
-      conv3_2 = model_utils.batch_norm(conv3_2, is_training)
+      conv3_2 = model_utils.batch_norm(conv3_2, hparams, is_training)
       conv3_2 = tf.nn.relu(conv3_2)
 
       conv3_3 = model_utils.conv(
           conv3_2, 3, 256, hparams, name="conv3_3", is_training=is_training)
-      conv3_3 = model_utils.batch_norm(conv3_3, is_training)
+      conv3_3 = model_utils.batch_norm(conv3_3, hparams, is_training)
       conv3_3 = tf.nn.relu(conv3_3)
 
       pool3 = tf.layers.max_pooling2d(
@@ -88,12 +88,12 @@ def get_vgg(hparams, lr):
 
       conv4_2 = model_utils.conv(
           conv4_1, 3, 512, hparams, name="conv4_2", is_training=is_training)
-      conv4_2 = model_utils.batch_norm(conv4_2, is_training)
+      conv4_2 = model_utils.batch_norm(conv4_2, hparams, is_training)
       conv4_2 = tf.nn.relu(conv4_2)
 
       conv4_3 = model_utils.conv(
           conv4_2, 3, 512, hparams, name="conv4_3", is_training=is_training)
-      conv4_3 = model_utils.batch_norm(conv4_3, is_training)
+      conv4_3 = model_utils.batch_norm(conv4_3, hparams, is_training)
       conv4_3 = tf.nn.relu(conv4_3)
 
       pool4 = tf.layers.max_pooling2d(
@@ -101,17 +101,17 @@ def get_vgg(hparams, lr):
 
       conv5_1 = model_utils.conv(
           pool4, 3, 512, hparams, name="conv5_1", is_training=is_training)
-      conv5_1 = model_utils.batch_norm(conv5_1, is_training)
+      conv5_1 = model_utils.batch_norm(conv5_1, hparams, is_training)
       conv5_1 = tf.nn.relu(conv5_1)
 
       conv5_2 = model_utils.conv(
           conv5_1, 3, 512, hparams, name="conv5_2", is_training=is_training)
-      conv5_2 = model_utils.batch_norm(conv5_2, is_training)
+      conv5_2 = model_utils.batch_norm(conv5_2, hparams, is_training)
       conv5_2 = tf.nn.relu(conv5_2)
 
       conv5_3 = model_utils.conv(
           conv5_2, 3, 512, hparams, name="conv5_3", is_training=is_training)
-      conv5_3 = model_utils.batch_norm(conv5_3, is_training)
+      conv5_3 = model_utils.batch_norm(conv5_3, hparams, is_training)
       conv5_3 = tf.nn.relu(conv5_3)
 
       pool5 = tf.layers.max_pooling2d(
@@ -119,9 +119,9 @@ def get_vgg(hparams, lr):
 
       flat_x = tf.reshape(pool5, [hparams.batch_size, 512])
       fc6 = model_utils.batch_norm(
-          tf.layers.dense(flat_x, 4096, name="fc6"), is_training)
+          tf.layers.dense(flat_x, 4096, name="fc6"), hparams, is_training)
       fc7 = model_utils.batch_norm(
-          tf.layers.dense(fc6, 4096, name="fc7"), is_training)
+          tf.layers.dense(fc6, 4096, name="fc7"), hparams, is_training)
 
       logits = tf.layers.dense(fc7, hparams.num_classes, name="logits")
       probs = tf.nn.softmax(logits, axis=-1)
@@ -135,7 +135,8 @@ def get_vgg(hparams, lr):
                 'probabilities': probs,
             })
 
-      xent = tf.losses.softmax_cross_entropy(labels, logits)
+      xent = tf.losses.sparse_softmax_cross_entropy(
+          labels=labels, logits=logits)
       cost = tf.reduce_mean(xent, name='xent')
       cost += model_utils.weight_decay(hparams)
 
@@ -167,10 +168,10 @@ def get_vgg(hparams, lr):
           dkl = tf.reduce_sum(tf.stack(divergences))
 
           warmup_steps = 50000
-          dkl = (
-              1. / N) * dkl * tf.minimum(1.0,
-                                         tf.to_float(tf.train.get_global_step(
-                                         )) / warmup_steps) * hparams.var_scale
+          dkl = (1. / N) * dkl * tf.minimum(
+              1.0,
+              tf.to_float(tf.train.get_global_step()) /
+              warmup_steps) * hparams.var_scale
           cost += dkl
           tf.summary.scalar("dkl", dkl)
 

@@ -6,6 +6,7 @@ from .dataset_maps import get_augmentation
 from .data_generators import cifar_generator, mnist_generator
 
 
+@register("imagenet", None)
 @register("mnist", mnist_generator.generate)
 @register("cifar10", cifar_generator.generate)
 @register("cifar100", cifar_generator.generate)
@@ -31,13 +32,18 @@ def image_reader(data_sources, hparams, training):
         dataset = dataset.map(
             get_augmentation(augmentation_name, hparams, training))
 
+    dataset = dataset.map(get_augmentation("set_shapes", hparams, training))
+    if hparams.data_format == "channels_first":
+      dataset = dataset.map(get_augmentation("transpose", hparams, training))
     dataset = dataset.repeat().batch(hparams.batch_size)
     dataset_it = dataset.make_one_shot_iterator()
 
     images, labels = dataset_it.get_next()
     if params is not None and "batch_size" in params:
-      images = tf.reshape(images, [hparams.batch_size] + hparams.input_shape)
-      labels = tf.reshape(labels, [hparams.batch_size] + hparams.output_shape)
+      images = tf.reshape(images,
+                          [hparams.batch_size] + images.shape.as_list()[1:])
+      labels = tf.reshape(labels,
+                          [hparams.batch_size] + labels.shape.as_list()[1:])
     return {"inputs": images, "labels": labels}, labels
 
   return _input_fn

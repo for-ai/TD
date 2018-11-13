@@ -42,6 +42,11 @@ def glorot_uniform_initializer(params):
   return tf.glorot_uniform_initializer()
 
 
+@register("variance_scaling_initializer")
+def variance_scaling_initializer(params):
+  return tf.variance_scaling_initializer()
+
+
 class RandomUnitScaling(tf.keras.initializers.Initializer):
 
   def __call__(self, shape, dtype=None, partition_info=None):
@@ -63,6 +68,12 @@ class RandomHadamardConstant(tf.keras.initializers.Initializer):
     flip = 2 * tf.round(tf.random_uniform(shape)) - 1
     m = tf.pow(dim, -1 / 2.)
     return m * flip
+
+
+class RandomHadamardUnscaled(tf.keras.initializers.Initializer):
+
+  def __call__(self, shape, dtype=None, partition_info=None):
+    return 2 * tf.round(tf.random_uniform(shape)) - 1
 
 
 class RandomWarpedUniform(tf.keras.initializers.Initializer):
@@ -98,3 +109,8 @@ def unit_scaling(params):
 @register("hadamard_constant")
 def hadamard_constant(params):
   return RandomHadamardConstant()
+
+
+@register("hadamard_unscaled")
+def hadamard_unscaled(params):
+  return RandomHadamardUnscaled()

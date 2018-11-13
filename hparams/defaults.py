@@ -11,7 +11,7 @@ def default():
       data=None,
       shuffle_data=True,
       data_augmentations=None,
-      train_steps=100000,
+      train_epochs=256,
       eval_steps=100,
       type="image",
       batch_size=64,
@@ -52,14 +52,18 @@ def default():
       td_nines=0,
       targ_cost=1.0,
       aparams="",
-      channels=1)
+      channels=1,
+      data_format="channels_last",
+      epoch_size=50000,
+  )
 
 
 @register
 def default_cifar10():
   hps = default()
   hps.data = "cifar10"
-  hps.data_augmentations = ["image_augmentation"]
+  hps.data_augmentations = ["cifar_augmentation"]
+  hps.epoch_size = 50000  # number of images in train set
 
   hps.input_shape = [32, 32, 3]
   hps.output_shape = [10]
@@ -71,13 +75,44 @@ def default_cifar10():
 
 @register
 def default_cifar100():
-  hps = default()
+  hps = default_cifar10()
   hps.data = "cifar100"
-  hps.data_augmentations = ["image_augmentation"]
-
-  hps.input_shape = [32, 32, 3]
   hps.output_shape = [100]
   hps.num_classes = 100
   hps.channels = 3
 
+  return hps
+
+
+@register
+def default_imagenet299():
+  hps = default()
+  hps.data = "imagenet"
+  hps.data_augmentations = ["imagenet_augmentation"]
+  hps.epoch_size = 1281167
+  hps.input_shape = [299, 299, 3]
+  hps.channels = 3
+  hps.output_shape = [1001]
+  hps.num_classes = 1001
+  return hps
+
+
+@register
+def default_imagenet224():
+  hps = default_imagenet299()
+  hps.input_shape = [224, 224, 3]
+  return hps
+
+
+@register
+def default_imagenet64():
+  hps = default_imagenet299()
+  hps.input_shape = [64, 64, 3]
+  return hps
+
+
+@register
+def default_imagenet32():
+  hps = default_imagenet299()
+  hps.input_shape = [32, 32, 3]
   return hps

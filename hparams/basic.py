@@ -1,13 +1,13 @@
 import tensorflow as tf
 
-from .defaults import default
+from . import defaults
 from .registry import register
 
 
 # MNIST =========================
 @register
 def mnist_basic_no_dropout():
-  hps = default()
+  hps = defaults.default()
   hps.model = "basic"
   hps.data = "mnist"
   hps.activation = "relu"
@@ -108,7 +108,7 @@ def mnist_basic_smallify_weight_dropout_1eneg4():
 
 @register
 def cifar10_basic_no_dropout():
-  hps = default()
+  hps = defaults.default()
   hps.model = "basic"
   hps.data = "cifar10"
   hps.activation = "relu"
@@ -135,4 +135,21 @@ def cifar100_basic_no_dropout():
   hps.data_augmentations = ["image_augmentation"]
   hps.output_shape = [100]
   hps.data = "cifar100"
+  return hps
+
+
+@register
+def imagenet32_basic():
+  hps = defaults.default_imagenet32()
+  hps.model = "basic"
+  hps.activation = "relu"
+  hps.batch_norm = False
+  hps.dropout = 0.0
+  hps.dropout_type = None
+  hps.initializer = "glorot_uniform_initializer"
+  hps.layers = [128, 64, 32]
+  hps.layer_type = "dense"
+  hps.learning_rate = 0.1
+  hps.optimizer = "momentum"
+  hps.momentum = 0.0
   return hps
