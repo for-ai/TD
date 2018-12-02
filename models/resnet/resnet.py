@@ -189,7 +189,6 @@ def get_resnet(hparams, lr):
             strides=stride,
             dropout=False,
             name='init_conv')
-        x = quantize(x, hparams, is_training)
 
         if large_input:
           x = tf.layers.max_pooling2d(
