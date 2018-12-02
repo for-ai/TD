@@ -36,6 +36,8 @@ def init_flags():
                          "file to put results")
   tf.flags.DEFINE_integer("train_epochs", None,
                           "Number of training epochs to perform.")
+  tf.flags.DEFINE_integer("eval_steps", None,
+                          "Number of evaluation steps to perform.")
 
 
 def eval_model(FLAGS, hparam_name):
