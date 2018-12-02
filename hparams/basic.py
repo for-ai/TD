@@ -122,7 +122,6 @@ def cifar10_basic_no_dropout():
 @register
 def cifar100_basic_no_dropout():
   hps = cifar10_basic_no_dropout()
-  hps.data_augmentations = ["image_augmentation"]
   hps.output_shape = [100]
   hps.data = "cifar100"
   return hps
