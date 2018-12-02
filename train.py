@@ -58,7 +58,7 @@ def init_random_seeds():
   np.random.seed(FLAGS.seed)
 
 
-def init_model(i, hparams_name):
+def init_model(hparams_name):
   flags.validate_flags(FLAGS)
 
   tf.reset_default_graph()
@@ -119,9 +119,9 @@ def construct_estimator(model_fn, hparams, tpu=None):
   return estimator
 
 
-def _run(i, hparams_name):
+def _run(hparams_name):
   """Run training, evaluation and inference."""
-  hparams = init_model(i, hparams_name)
+  hparams = init_model(hparams_name)
   original_batch_size = hparams.batch_size
   if tf.gfile.Exists(hparams.output_dir) and FLAGS.fresh:
     tf.gfile.DeleteRecursively(hparams.output_dir)
@@ -177,11 +177,6 @@ def _run(i, hparams_name):
     k = steps * original_batch_size / float(hparams.epoch_size)
 
 
-def run_job():
-  for hparams_name in FLAGS.hparams.split(","):
-    _run(i, hparams_name)
-
-
 def main(_):
   global FLAGS
   FLAGS = tf.app.flags.FLAGS
@@ -189,7 +184,8 @@ def main(_):
   init_random_seeds()
   if FLAGS.env != "local":
     cloud.connect()
-  run_job()
+  for hparams_name in FLAGS.hparams.split(","):
+    _run(hparams_name)
 
 
 if __name__ == "__main__":
