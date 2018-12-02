@@ -21,8 +21,6 @@ def validate_flags(FLAGS):
 
 
 def update_hparams(FLAGS, hparams, hparams_name):
-  hparams.model = FLAGS.model or hparams.model
-  hparams.data = FLAGS.data or hparams.data
   hparams.env = FLAGS.env
   hparams.use_tpu = hparams.env == "tpu"
   hparams.train_epochs = FLAGS.train_epochs or hparams.train_epochs
