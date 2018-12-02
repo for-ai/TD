@@ -174,17 +174,9 @@ def _run(i, hparams_name):
 
 
 def run_job():
-  try:
-    for hparams_name in FLAGS.hparams.split(","):
-      for i in range(FLAGS.copies):
-        _run(i, hparams_name)
-    if FLAGS.env in ['gcp', 'tpu']:
-      shut_down()
-  except (KeyboardInterrupt, KeyError) as e:  # catch ctrl-c's and mispelling
-    raise e
-  except Exception as e:
-    shut_down(e)
-    raise e
+  for hparams_name in FLAGS.hparams.split(","):
+    for i in range(FLAGS.copies):
+      _run(i, hparams_name)
 
 
 def main(_):
