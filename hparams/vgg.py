@@ -61,16 +61,16 @@ def cifar10_vgg16_no_dropout():
 @register
 def cifar100_vgg16_targeted_dropout():
   hps = cifar100_vgg16_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
   return hps
 
 
 @register
 def cifar100_vgg16_untargeted_dropout():
   hps = cifar100_vgg16_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "untargeted_weight"
   return hps
 
@@ -78,7 +78,7 @@ def cifar100_vgg16_untargeted_dropout():
 @register
 def cifar100_vgg16_untargeted_unit_dropout():
   hps = cifar100_vgg16_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "untargeted_unit"
   return hps
 
@@ -86,17 +86,17 @@ def cifar100_vgg16_untargeted_unit_dropout():
 @register
 def cifar100_vgg16_targeted_unit_dropout():
   hps = cifar100_vgg16_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
   return hps
 
 
 @register
 def cifar100_vgg16_targeted_unit_dropout_botk75_66():
   hps = cifar100_vgg16_targeted_unit_dropout()
-  hps.dropout = 0.66
-  hps.targeted = 0.75
+  hps.drop_rate = 0.66
+  hps.targ_rate = 0.75
   return hps
 
 
@@ -108,7 +108,7 @@ def cifar100_vgg16_louizos_unit():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.001
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
 
   return hps
 
@@ -125,7 +125,7 @@ def cifar100_vgg16_louizos_weight():
 def cifar100_vgg16_variational_unscaled():
   hps = cifar100_vgg16_no_dropout()
   hps.dropout_type = "variational"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
   hps.thresh = 3
   hps.var_scale = 1
   hps.weight_decay_rate = 0.0

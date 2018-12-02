@@ -78,7 +78,7 @@ def cifar10_resnet32():
 @register
 def cifar10_resnet32_no_dropout():
   hps = cifar10_resnet32()
-  hps.dropout = 0.0
+  hps.drop_rate = 0.0
 
   return hps
 
@@ -86,9 +86,9 @@ def cifar10_resnet32_no_dropout():
 @register
 def cifar10_resnet32_trgtd_weight():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
 
   return hps
 
@@ -96,7 +96,7 @@ def cifar10_resnet32_trgtd_weight():
 @register
 def cifar10_resnet32_weight():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "untargeted_weight"
 
   return hps
@@ -105,7 +105,7 @@ def cifar10_resnet32_weight():
 @register
 def cifar10_resnet32_weight_50():
   hps = cifar10_resnet32_weight()
-  hps.dropout = 0.50
+  hps.drop_rate = 0.50
 
   return hps
 
@@ -113,9 +113,9 @@ def cifar10_resnet32_weight_50():
 @register
 def cifar10_resnet32_trgtd_unit():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
 
   return hps
 
@@ -123,9 +123,9 @@ def cifar10_resnet32_trgtd_unit():
 @register
 def cifar10_resnet32_trgtd_ard():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "targeted_ard"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
 
   return hps
 
@@ -133,7 +133,7 @@ def cifar10_resnet32_trgtd_ard():
 @register
 def cifar10_resnet32_unit():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "untargeted_unit"
 
   return hps
@@ -142,7 +142,7 @@ def cifar10_resnet32_unit():
 @register
 def cifar10_resnet32_unit_50():
   hps = cifar10_resnet32_unit()
-  hps.dropout = 0.50
+  hps.drop_rate = 0.50
 
   return hps
 
@@ -174,9 +174,9 @@ def cifar10_resnet32_l1_1eneg1():
 @register
 def cifar10_resnet32_trgted_weight_l1():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
   hps.l1_norm = 0.1
 
   return hps
@@ -185,9 +185,9 @@ def cifar10_resnet32_trgted_weight_l1():
 @register
 def cifar10_resnet32_targeted_unit_l1():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.5
+  hps.drop_rate = 0.5
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.5
+  hps.targ_rate = 0.5
   hps.l1_norm = 0.1
 
   return hps
@@ -196,9 +196,9 @@ def cifar10_resnet32_targeted_unit_l1():
 @register
 def cifar10_resnet32_trgtd_unit_botk75_33():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.33
+  hps.drop_rate = 0.33
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
 
   return hps
 
@@ -206,9 +206,9 @@ def cifar10_resnet32_trgtd_unit_botk75_33():
 @register
 def cifar10_resnet32_trgtd_unit_botk75_66():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.66
+  hps.drop_rate = 0.66
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
 
   return hps
 
@@ -216,9 +216,9 @@ def cifar10_resnet32_trgtd_unit_botk75_66():
 @register
 def cifar10_resnet32_trgtd_weight_botk75_33():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.33
+  hps.drop_rate = 0.33
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
 
   return hps
 
@@ -226,9 +226,9 @@ def cifar10_resnet32_trgtd_weight_botk75_33():
 @register
 def cifar10_resnet32_trgtd_weight_botk75_66():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.66
+  hps.drop_rate = 0.66
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
 
   return hps
 
@@ -236,9 +236,9 @@ def cifar10_resnet32_trgtd_weight_botk75_66():
 @register
 def cifar10_resnet32_trgtd_unit_ramping_botk90_99():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.99
+  hps.drop_rate = 0.99
   hps.dropout_type = "targeted_unit_piecewise"
-  hps.targeted = 0.90
+  hps.targ_rate = 0.90
 
   return hps
 
@@ -246,9 +246,9 @@ def cifar10_resnet32_trgtd_unit_ramping_botk90_99():
 @register
 def cifar10_resnet32_trgtd_weight_ramping_botk99_99():
   hps = cifar10_resnet32_no_dropout()
-  hps.dropout = 0.99
+  hps.drop_rate = 0.99
   hps.dropout_type = "targeted_weight_piecewise"
-  hps.targeted = 0.99
+  hps.targ_rate = 0.99
   hps.linear_drop_rate = True
 
   return hps
@@ -262,7 +262,7 @@ def cifar10_resnet32_louizos_weight_1en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.001
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.001
+  hps.drop_rate = 0.001
 
   return hps
 
@@ -308,7 +308,7 @@ def cifar10_resnet32_louizos_unit_1en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.001
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.001
+  hps.drop_rate = 0.001
 
   return hps
 
@@ -365,7 +365,7 @@ def cifar10_resnet32_louizos_unit_1en6():
 def cifar10_resnet32_variational_weight():
   hps = cifar10_resnet32_no_dropout()
   hps.dropout_type = "variational"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
   hps.thresh = 3
   hps.var_scale = 1. / 100
   hps.weight_decay_rate = None
@@ -377,7 +377,7 @@ def cifar10_resnet32_variational_weight():
 def cifar10_resnet32_variational_weight_unscaled():
   hps = cifar10_resnet32_no_dropout()
   hps.dropout_type = "variational"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
   hps.thresh = 3
   hps.var_scale = 1
   hps.weight_decay_rate = None
@@ -389,7 +389,7 @@ def cifar10_resnet32_variational_weight_unscaled():
 def cifar10_resnet32_variational_unit():
   hps = cifar10_resnet32_no_dropout()
   hps.dropout_type = "variational_unit"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
   hps.thresh = 3
   hps.var_scale = 1. / 100
   hps.weight_decay_rate = None
@@ -401,7 +401,7 @@ def cifar10_resnet32_variational_unit():
 def cifar10_resnet32_variational_unit_unscaled():
   hps = cifar10_resnet32_no_dropout()
   hps.dropout_type = "variational_unit"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
   hps.thresh = 3
   hps.var_scale = 1
   hps.weight_decay_rate = None

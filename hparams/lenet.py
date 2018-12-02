@@ -24,9 +24,9 @@ def cifar_lenet():
   hps.momentum = 0.9
   hps.use_nesterov = True
 
-  hps.dropout = 0.0
+  hps.drop_rate = 0.0
   hps.dropout_type = None
-  hps.targeted = 0.0
+  hps.targ_rate = 0.0
 
   hps.axis_aligned_cost = False
   hps.clp = False
@@ -45,15 +45,15 @@ def cifar_lenet_no_dropout():
 def cifar_lenet_weight():
   hps = cifar_lenet_no_dropout()
   hps.dropout_type = "untargeted_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
 @register
 def cifar_lenet_trgtd_weight():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.5
-  hps.targeted = 0.5
+  hps.drop_rate = 0.5
+  hps.targ_rate = 0.5
   hps.dropout_type = "targeted_weight"
   return hps
 
@@ -61,7 +61,7 @@ def cifar_lenet_trgtd_weight():
 @register
 def cifar_lenet_unit():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   hps.dropout_type = "untargeted_unit"
   return hps
 
@@ -69,8 +69,8 @@ def cifar_lenet_unit():
 @register
 def cifar_lenet_trgtd_unit():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.5
-  hps.targeted = 0.5
+  hps.drop_rate = 0.5
+  hps.targ_rate = 0.5
   hps.dropout_type = "targeted_unit"
   return hps
 
@@ -86,8 +86,8 @@ def cifar_lenet_l1():
 def cifar_lenet_trgtd_weight_l1():
   hps = cifar_lenet_no_dropout()
   hps.l1_norm = 0.1
-  hps.dropout = 0.5
-  hps.targeted = 0.5
+  hps.drop_rate = 0.5
+  hps.targ_rate = 0.5
   hps.dropout_type = "targeted_weight"
   return hps
 
@@ -96,8 +96,8 @@ def cifar_lenet_trgtd_weight_l1():
 def cifar_lenet_trgtd_unit_l1():
   hps = cifar_lenet_no_dropout()
   hps.l1_norm = 0.1
-  hps.dropout = 0.5
-  hps.targeted = 0.5
+  hps.drop_rate = 0.5
+  hps.targ_rate = 0.5
   hps.dropout_type = "targeted_unit"
   return hps
 
@@ -105,36 +105,36 @@ def cifar_lenet_trgtd_unit_l1():
 @register
 def cifar_lenet_trgtd_unit_botk75_33():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.33
+  hps.drop_rate = 0.33
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
   return hps
 
 
 @register
 def cifar_lenet_trgtd_unit_botk75_66():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.66
+  hps.drop_rate = 0.66
   hps.dropout_type = "targeted_unit"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
   return hps
 
 
 @register
 def cifar_lenet_trgtd_weight_botk75_33():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.33
+  hps.drop_rate = 0.33
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
   return hps
 
 
 @register
 def cifar_lenet_trgtd_weight_botk75_66():
   hps = cifar_lenet_no_dropout()
-  hps.dropout = 0.66
+  hps.drop_rate = 0.66
   hps.dropout_type = "targeted_weight"
-  hps.targeted = 0.75
+  hps.targ_rate = 0.75
   return hps
 
 
@@ -146,7 +146,7 @@ def cifar_lenet_louizos_weight_1en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.001
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -158,7 +158,7 @@ def cifar_lenet_louizos_weight_1en1():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.1
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -170,7 +170,7 @@ def cifar_lenet_louizos_weight_1en2():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.01
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -182,7 +182,7 @@ def cifar_lenet_louizos_weight_5en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.005
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -194,7 +194,7 @@ def cifar_lenet_louizos_weight_1en4():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.0001
   hps.dropout_type = "louizos_weight"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -206,7 +206,7 @@ def cifar_lenet_louizos_unit_1en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.001
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -218,7 +218,7 @@ def cifar_lenet_louizos_unit_1en1():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.1
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -230,7 +230,7 @@ def cifar_lenet_louizos_unit_1en2():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.01
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -242,7 +242,7 @@ def cifar_lenet_louizos_unit_5en3():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.005
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -254,7 +254,7 @@ def cifar_lenet_louizos_unit_1en4():
   hps.louizos_gamma = -0.1
   hps.louizos_cost = 0.0001
   hps.dropout_type = "louizos_unit"
-  hps.dropout = 0.25
+  hps.drop_rate = 0.25
   return hps
 
 
@@ -263,7 +263,7 @@ def cifar_lenet_variational():
   hps = cifar_lenet_no_dropout()
   hps.dropout_type = "variational"
   hps.var_scale = 1. / 100
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
 
   return hps
 
@@ -272,7 +272,7 @@ def cifar_lenet_variational():
 def cifar_lenet_variational_unscaled():
   hps = cifar_lenet_no_dropout()
   hps.dropout_type = "variational"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
 
   return hps
 
@@ -282,7 +282,7 @@ def cifar_lenet_variational_unit():
   hps = cifar_lenet_no_dropout()
   hps.dropout_type = "variational_unit"
   hps.var_scale = 1. / 100
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
 
   return hps
 
@@ -291,7 +291,7 @@ def cifar_lenet_variational_unit():
 def cifar_lenet_variational_unit_unscaled():
   hps = cifar_lenet_no_dropout()
   hps.dropout_type = "variational_unit"
-  hps.dropout = 0.75
+  hps.drop_rate = 0.75
 
   return hps
 
