@@ -57,7 +57,7 @@ def get_lenet(hparams, lr):
       is_training = mode == tf.estimator.ModeKeys.TRAIN
       actvn = get_activation(hparams)
 
-if hparams.use_tpu and 'batch_size' in params.keys():
+      if hparams.use_tpu and 'batch_size' in params.keys():
         hparams.batch_size = params['batch_size']
 
       # input layer
@@ -93,7 +93,7 @@ if hparams.use_tpu and 'batch_size' in params.keys():
 
       # fc2
       with tf.variable_scope('fc2'):
-                y = model_utils.dense(h_fc1, 10, hparams, is_training, dropout=False)
+        y = model_utils.dense(h_fc1, 10, hparams, is_training, dropout=False)
 
       if mode in [model_utils.ModeKeys.PREDICT, model_utils.ModeKeys.ATTACK]:
         predictions = {
@@ -113,9 +113,9 @@ if hparams.use_tpu and 'batch_size' in params.keys():
             1 - tf.one_hot(tf.argmax(tf.abs(y), -1), hparams.num_classes))
         tf.summary.scalar(
             "logit_prior",
-              tf.reduce_mean(
-                  tf.to_float(
-                      tf.logical_and(masked_max >= 0.0, masked_max <= 0.1))))
+            tf.reduce_mean(
+                tf.to_float(
+                    tf.logical_and(masked_max >= 0.0, masked_max <= 0.1))))
         tf.summary.scalar("avg_max",
                           tf.reduce_mean(tf.reduce_max(tf.abs(y), axis=-1)))
         loss += hparams.axis_aligned_cost * tf.reduce_mean(
