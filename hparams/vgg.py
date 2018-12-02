@@ -34,7 +34,6 @@ def cifar10_vgg16():
 def cifar100_vgg16_no_dropout():
   hps = vgg16_default()
   hps.data = "cifar100"
-  hps.data_augmentations = ["image_augmentation"]
 
   hps.input_shape = [32, 32, 3]
   hps.output_shape = [100]
@@ -48,7 +47,6 @@ def cifar100_vgg16_no_dropout():
 def cifar10_vgg16_no_dropout():
   hps = vgg16_default()
   hps.data = "cifar10"
-  hps.data_augmentations = ["image_augmentation"]
 
   hps.input_shape = [32, 32, 3]
   hps.output_shape = [10]

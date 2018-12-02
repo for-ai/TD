@@ -210,7 +210,7 @@ def delayed_targeted_unit(x, params, is_training):
 def untargeted_weight(w, params, is_training):
   if not is_training:
     return w
-  return tf.nn.drop_rate(w, keep_prob=(1. - params.drop_rate))
+  return tf.nn.dropout(w, keep_prob=(1. - params.drop_rate))
 
 
 @register("targeted_unit")
