@@ -26,7 +26,8 @@ def init_flags():
                          "Run-specific hparam settings to use.")
   tf.flags.DEFINE_boolean("fresh", False, "Remove output_dir before running.")
   tf.flags.DEFINE_integer("seed", None, "Random seed.")
-
+  tf.flags.DEFINE_integer("copies", 1,
+                          "Runs current parameters this many times.")
   # TPU flags
   tf.flags.DEFINE_string("tpu_name", "", "Name of TPU(s)")
   tf.flags.DEFINE_integer(
