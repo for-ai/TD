@@ -28,6 +28,9 @@ def init_flags():
   tf.flags.DEFINE_integer("seed", None, "Random seed.")
   tf.flags.DEFINE_integer("copies", 1,
                           "Runs current parameters this many times.")
+  tf.flags.DEFINE_integer("train_epochs", None,
+                          "Number of training epochs to perform.")
+
   # TPU flags
   tf.flags.DEFINE_string("tpu_name", "", "Name of TPU(s)")
   tf.flags.DEFINE_integer(

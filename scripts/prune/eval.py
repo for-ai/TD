@@ -34,6 +34,8 @@ def init_flags():
   tf.flags.DEFINE_boolean("variational", False, "use evaluate")
   tf.flags.DEFINE_string("eval_file", "eval_prune_results",
                          "file to put results")
+  tf.flags.DEFINE_integer("train_epochs", None,
+                          "Number of training epochs to perform.")
 
 
 def eval_model(FLAGS, hparam_name):
