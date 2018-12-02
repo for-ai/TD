@@ -26,8 +26,6 @@ def init_flags():
                          "Run-specific hparam settings to use.")
   tf.flags.DEFINE_boolean("fresh", False, "Remove output_dir before running.")
   tf.flags.DEFINE_integer("seed", None, "Random seed.")
-  tf.flags.DEFINE_integer("copies", 1,
-                          "Runs current parameters this many times.")
   tf.flags.DEFINE_integer("train_epochs", None,
                           "Number of training epochs to perform.")
   tf.flags.DEFINE_integer("eval_steps", None,
@@ -124,7 +122,6 @@ def construct_estimator(model_fn, hparams, tpu=None):
 def _run(i, hparams_name):
   """Run training, evaluation and inference."""
   hparams = init_model(i, hparams_name)
-  hparams.output_dir = os.path.join(hparams.output_dir, str(i))
   original_batch_size = hparams.batch_size
   if tf.gfile.Exists(hparams.output_dir) and FLAGS.fresh:
     tf.gfile.DeleteRecursively(hparams.output_dir)
@@ -182,8 +179,7 @@ def _run(i, hparams_name):
 
 def run_job():
   for hparams_name in FLAGS.hparams.split(","):
-    for i in range(FLAGS.copies):
-      _run(i, hparams_name)
+    _run(i, hparams_name)
 
 
 def main(_):

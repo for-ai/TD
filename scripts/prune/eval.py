@@ -24,7 +24,6 @@ def init_flags():
                           "Number of evaluation steps to perform.")
   tf.flags.DEFINE_integer("eval_every", 1000,
                           "Number of steps between evaluations.")
-  tf.flags.DEFINE_integer("copy", 0, "Model copy to run on.")
   tf.flags.DEFINE_string(
       "post_weights_dir", "",
       "folder of the weights, if not set defaults to output_dir")
