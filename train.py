@@ -41,8 +41,6 @@ def init_flags():
       "Warning: this will slow down execution.")
   tf.flags.DEFINE_boolean("tpu_dedicated", False,
                           "Do not use preemptible TPUs.")
-  # Legacy flags
-  flags.legacy_flags()
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
