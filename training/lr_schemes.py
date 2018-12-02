@@ -159,7 +159,7 @@ def warmup_cosine(gs, params):
 
 
 @register("cosine")
-def cosine_annealing(gs. params):
+def cosine_annealing(gs, params):
   from numpy import pi
 
   gs = tf.minimum(gs, params.learning_rate_cosine_cycle_steps)
@@ -167,5 +167,5 @@ def cosine_annealing(gs. params):
       pi * tf.to_float(gs) / params.learning_rate_cosine_cycle_steps))
   decayed = (1 - params.cosine_alpha) * cosine_decay + params.cosine_alpha
   decayed_learning_rate = params.learning_rate * decayed
-  
+
   return decayed_learning_rate
