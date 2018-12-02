@@ -28,6 +28,6 @@ def update_hparams(FLAGS, hparams, hparams_name):
 
   env = get_env(FLAGS.env)
   hparams.data_dir = os.path.join(FLAGS.data_dir or env.data_dir, hparams.data)
-  hparams.output_dir = FLAGS.output_dir
+  hparams.output_dir = os.path.join(env.output_dir, FLAGS.hparams)
 
   return hparams
