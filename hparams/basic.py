@@ -12,7 +12,7 @@ def mnist_basic_no_dropout():
   hps.data = "mnist"
   hps.activation = "relu"
   hps.batch_norm = False
-  hps.drop_rate = 0.0
+  hps.dropout = 0.0
   hps.dropout_type = None
   hps.initializer = "glorot_uniform_initializer"
   hps.layers = [128, 64, 32]
@@ -30,9 +30,9 @@ def mnist_basic_no_dropout():
 @register
 def mnist_basic_trgtd_dropout():
   hps = mnist_basic_no_dropout()
-  hps.drop_rate = 0.5
+  hps.dropout = 0.5
   hps.dropout_type = "targeted_weight"
-  hps.targ_rate = 0.5
+  hps.targeted = 0.5
 
   return hps
 
@@ -40,18 +40,8 @@ def mnist_basic_trgtd_dropout():
 @register
 def mnist_basic_untrgtd_dropout():
   hps = mnist_basic_no_dropout()
-  hps.drop_rate = 0.25
+  hps.dropout = 0.25
   hps.dropout_type = "untargeted_weight"
-
-  return hps
-
-
-@register
-def mnist_basic_trgtd_dropout_1():
-  hps = mnist_basic_no_dropout()
-  hps.drop_rate = 0.5
-  hps.dropout_type = "targeted_weight_old"
-  hps.targ_rate = 0.5
 
   return hps
 
@@ -59,9 +49,9 @@ def mnist_basic_trgtd_dropout_1():
 @register
 def mnist_basic_trgtd_dropout_random():
   hps = mnist_basic_no_dropout()
-  hps.drop_rate = 0.5
+  hps.dropout = 0.5
   hps.dropout_type = "targeted_weight_random"
-  hps.targ_rate = 0.5
+  hps.targeted = 0.5
 
   return hps
 
@@ -69,9 +59,9 @@ def mnist_basic_trgtd_dropout_random():
 @register
 def mnist_basic_trgtd_unit_dropout():
   hps = mnist_basic_no_dropout()
-  hps.drop_rate = 0.5
+  hps.dropout = 0.5
   hps.dropout_type = "targeted_unit"
-  hps.targ_rate = 0.5
+  hps.targeted = 0.5
 
   return hps
 
@@ -113,7 +103,7 @@ def cifar10_basic_no_dropout():
   hps.data = "cifar10"
   hps.activation = "relu"
   hps.batch_norm = False
-  hps.drop_rate = 0.0
+  hps.dropout = 0.0
   hps.dropout_type = None
   hps.initializer = "glorot_uniform_initializer"
   hps.layers = [128, 64, 32]

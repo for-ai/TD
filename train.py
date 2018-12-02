@@ -55,14 +55,14 @@ def init_random_seeds():
   np.random.seed(FLAGS.seed)
 
 
-def init_model(i):
+def init_model(i, hparams_name):
   flags.validate_flags(FLAGS)
 
   tf.reset_default_graph()
 
-  hparams = get_hparams(FLAGS.hparams)
+  hparams = get_hparams(hparams_name)
   hparams = hparams.parse(FLAGS.hparam_override)
-  hparams = flags.update_hparams(FLAGS, hparams)
+  hparams = flags.update_hparams(FLAGS, hparams, hparams_name)
 
   # set larger eval_every for TPUs to improve utilization
   if FLAGS.env == "tpu":
@@ -75,7 +75,7 @@ def init_model(i):
                   "\t output_dir: %s\n"
                   "\t data_dir: %s\n"
                   "-----------------------------------------\n" %
-                  (FLAGS.hparams, hparams.output_dir, hparams.data_dir))
+                  (hparams_name, hparams.output_dir, hparams.data_dir))
 
   return hparams
 
@@ -107,6 +107,7 @@ def construct_estimator(model_fn, hparams, tpu=None):
     gpu_config.gpu_options.allow_growth = True
     run_config = tf.estimator.RunConfig(
         save_checkpoints_steps=FLAGS.eval_every, session_config=gpu_config)
+
     estimator = tf.estimator.Estimator(
         model_fn=tf.contrib.estimator.replicate_model_fn(model_fn),
         model_dir=hparams.output_dir,
@@ -115,9 +116,9 @@ def construct_estimator(model_fn, hparams, tpu=None):
   return estimator
 
 
-def _run(i):
+def _run(i, hparams_name):
   """Run training, evaluation and inference."""
-  hparams = init_model(i)
+  hparams = init_model(i, hparams_name)
   hparams.output_dir = os.path.join(hparams.output_dir, str(i))
   original_batch_size = hparams.batch_size
   if tf.gfile.Exists(hparams.output_dir) and FLAGS.fresh:
@@ -162,14 +163,30 @@ def _run(i):
   k = steps * original_batch_size / float(hparams.epoch_size)
   while k <= hparams.train_epochs:
     tf.logging.info("Beginning epoch %f / %d" % (k, hparams.train_epochs))
+
     if tpu and not tpu.usable:
       tpu.delete(async=True)
       tpu = cloud.instance.tpu.get(preemptible=not FLAGS.tpu_dedicated)
       estimator = construct_estimator(model_fn, hparams, tpu)
 
     loop()
+
     steps = estimator.get_variable_value("global_step")
     k = steps * original_batch_size / float(hparams.epoch_size)
+
+
+def run_job():
+  try:
+    for hparams_name in FLAGS.hparams.split(","):
+      for i in range(FLAGS.copies):
+        _run(i, hparams_name)
+    if FLAGS.env in ['gcp', 'tpu']:
+      shut_down()
+  except (KeyboardInterrupt, KeyError) as e:  # catch ctrl-c's and mispelling
+    raise e
+  except Exception as e:
+    shut_down(e)
+    raise e
 
 
 def main(_):

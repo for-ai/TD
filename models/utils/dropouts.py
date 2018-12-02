@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 
 _DROPOUTS = dict()
@@ -17,326 +18,11 @@ def get_dropout(name):
   return _DROPOUTS[name]
 
 
-def bitshift_left(x, bits, dtype=tf.int32):
-  y = x
-  if x.dtype is not dtype:
-    y = tf.cast(x, dtype)
-  y = tf.bitwise.left_shift(y, tf.cast(bits, dtype))
-  if x.dtype is not dtype:
-    y = tf.cast(y, x.dtype)
-  return y
-
-
-def bitshift_right(x, bits, dtype=tf.int32):
-  y = x
-  if x.dtype is not dtype:
-    y = tf.cast(x, dtype)
-  y = tf.bitwise.right_shift(y, tf.cast(bits, dtype))
-  if x.dtype is not dtype:
-    y = tf.cast(y, x.dtype)
-  return y
-
-
-def apply_fixed_point(x, lower_bits, upper_bits, apply_to_grads=False):
-  max_val = 2.**upper_bits
-  shift_up = 2.**lower_bits
-  shift_down = 2.**(-lower_bits)
-
-  @tf.custom_gradient
-  def fp(x):
-    y = shift_down * tf.round(shift_up * x)
-
-    def grad(dy):
-      if apply_to_grads:
-        dx = shift_down * tf.round(shift_up * dy)
-        return tf.sign(dx) * tf.minimum(tf.abs(dx), max_val - 1)
-      return dy
-
-    return tf.sign(y) * tf.minimum(tf.abs(y), max_val - 1), grad
-
-  return fp(x)
-
-
-def apply_bitrot(inputs,
-                 mantissa_bits_dropped=0,
-                 exponent_shift=0,
-                 exponent_safe_zone=(0, 0),
-                 keep_prob=0.0,
-                 is_training=False,
-                 version="1",
-                 apply_to_grads=False):
-  """Applies bitrot to the bits of the entries of a tensor.
-
-  Args:
-    inputs: Tensor of type tf.float32, inputs to apply targeted dropout to.
-    mantissa_bits_dropped: Scalar integer Tensor or python scalar (max: 23),
-      sets the number of low-order mantissa bits to zero. For bfloat16, set to
-      7.
-    exponent_shift: Scalar integer Tensor or python scalar (max: 255), sets
-      the maximum shift towards the exponent_safe_zone.
-    exponent_safe_zone: Pair of scalar integer Tensors, the desired minimum and
-      maximum exponent values.
-    keep_prob: Scalar Tensor, passed as `tf.nn.dropout`'s `keep_prob` argument.
-    is_training: bool, indicates whether currently training.
-
-  Returns:
-    Tensor, same shape and dtype as `inputs`.
-  """
-  is_weight = isinstance(inputs, tf.Variable)
-
-  def bitrot_fn(x=inputs, exponent_shift=exponent_shift):
-    inputs_bits = tf.bitcast(x, tf.int32)
-
-    if isinstance(exponent_shift, tf.Tensor) or exponent_shift > 0:
-      if version == "1":
-        # 1s over sign and mantissa bits
-        exp_mask = tf.constant(
-            sum(2**i for i in range(23, 31)), dtype=tf.int32)
-        mant_mask = tf.bitwise.invert(exp_mask)
-
-        inputs_exp = tf.bitwise.bitwise_and(exp_mask, inputs_bits)
-        inputs_exp = bitshift_right(inputs_exp, 23)
-        zero_distance = inputs_exp - 127
-        bottom, top = exponent_safe_zone
-
-        top_ramp = tf.nn.relu(zero_distance - top)
-        bottom_ramp = tf.nn.relu(-(zero_distance - bottom))
-        safe_distance = tf.maximum(bottom_ramp, top_ramp)
-
-        inputs_exp -= tf.sign(zero_distance) * tf.minimum(
-            exponent_shift, safe_distance)
-        inputs_exp = bitshift_left(inputs_exp, 23)
-        inputs_mant = tf.bitwise.bitwise_and(inputs_bits, mant_mask)
-
-        rotten_bits = tf.bitwise.bitwise_or(inputs_exp, inputs_mant)
-      elif version == "2":
-        _, top = exponent_safe_zone
-        max_val = 2**top
-        exponent_shift = 23. - tf.to_float(exponent_shift)
-        rotten_bits = 2.**(-exponent_shift) * tf.round(2.**exponent_shift * x)
-        rotten_bits = tf.sign(rotten_bits) * tf.minimum(
-            tf.abs(rotten_bits), max_val - 1)
-        rotten_bits = tf.bitcast(rotten_bits, tf.int32)
-    else:
-      rotten_bits = inputs_bits
-
-    if isinstance(mantissa_bits_dropped,
-                  tf.Tensor) or mantissa_bits_dropped > 0:
-      rotten_bits = bitshift_right(rotten_bits, mantissa_bits_dropped)
-      rotten_bits = bitshift_left(rotten_bits, mantissa_bits_dropped)
-
-    rotten_inputs = tf.bitcast(rotten_bits, tf.float32)
-
-    return tf.stop_gradient(rotten_inputs)
-
-  @tf.custom_gradient
-  def new_op(x):
-    rotten_inputs = bitrot_fn(x)
-
-    def grad(dy):
-      clean_grad = dy
-      rotten_grad = bitrot_fn(dy)
-
-      if is_weight:
-        tf.summary.histogram("difference", tf.abs(clean_grad - rotten_grad))
-        tf.summary.scalar(
-            "cosine",
-            tf.reduce_sum(clean_grad * rotten_grad) /
-            (tf.norm(clean_grad) * tf.norm(rotten_grad)))
-
-      return rotten_grad if apply_to_grads else clean_grad
-
-    return rotten_inputs, grad
-
-  outputs = new_op(inputs)
-
-  if not is_training:
-    return outputs
-
-  mask = tf.random_uniform(tf.shape(inputs)) < keep_prob
-  outputs = tf.where(mask, inputs, outputs)
-
-  return outputs
-
-
-@register("bitrot")
-def bitrot(w, params, is_training):
-  bits_lost = params.bits_to_drop
-  drop_rate = params.drop_rate
-
-  return apply_bitrot(
-      w,
-      mantissa_bits_dropped=bits_lost,
-      keep_prob=1 - drop_rate,
-      is_training=is_training,
-      apply_to_grads=params.apply_to_grads)
-
-
-@register("ramping_bitrot")
-def ramping_bitrot(w, params, is_training):
-  drop_rate = params.drop_rate
-
-  ramp = tf.to_float(tf.train.get_global_step()) / params.ramping_period
-  ramp = tf.minimum(1., ramp)
-  bits_lost = (params.ramp_top - params.ramp_bottom) * ramp + params.ramp_bottom
-  bits_lost = tf.to_int32(tf.round(bits_lost))
-
-  return apply_bitrot(
-      w,
-      mantissa_bits_dropped=bits_lost,
-      keep_prob=1 - drop_rate,
-      is_training=is_training,
-      apply_to_grads=params.apply_to_grads)
-
-
-@register("exprot")
-def exprot(w, params, is_training):
-  shift = params.max_shift
-  safe_zone = params.safe_zone
-  drop_rate = params.drop_rate
-
-  return apply_bitrot(
-      w,
-      exponent_shift=shift,
-      exponent_safe_zone=safe_zone,
-      keep_prob=1 - drop_rate,
-      is_training=is_training,
-      apply_to_grads=params.apply_to_grads)
-
-
-@register("ramping_exprot")
-def ramping_exprot(w, params, is_training):
-  safe_zone = params.safe_zone
-  drop_rate = params.drop_rate
-
-  ramp = tf.to_float(tf.train.get_global_step()) / params.ramping_period
-  ramp = tf.minimum(1., ramp)
-  shift = (params.ramp_top - params.ramp_bottom) * ramp + params.ramp_bottom
-  shift = tf.to_int32(tf.round(shift))
-
-  return apply_bitrot(
-      w,
-      exponent_shift=shift,
-      exponent_safe_zone=safe_zone,
-      keep_prob=1 - drop_rate,
-      is_training=is_training,
-      apply_to_grads=params.apply_to_grads)
-
-
-@register("ramping_exprot_v2")
-def ramping_exprot_v2(w, params, is_training):
-  safe_zone = params.safe_zone
-  drop_rate = params.drop_rate
-
-  ramp = tf.to_float(tf.train.get_global_step()) / params.ramping_period
-  ramp = tf.minimum(1., ramp)
-  shift = (params.ramp_top - params.ramp_bottom) * ramp + params.ramp_bottom
-  shift = tf.to_int32(tf.round(shift))
-
-  return apply_bitrot(
-      w,
-      exponent_shift=shift,
-      exponent_safe_zone=safe_zone,
-      keep_prob=1 - drop_rate,
-      is_training=is_training,
-      version="2",
-      apply_to_grads=params.apply_to_grads)
-
-
-@register("fixed_point")
-def fixed_point(w, params, is_training):
-  lower_bits = float(params.lower_bits)
-  upper_bits = float(params.upper_bits)
-
-  return apply_fixed_point(
-      w, lower_bits, upper_bits, apply_to_grads=params.apply_to_grads)
-
-
-@register("ramping_exprot_to_fp")
-def ramping_exprot_to_fp(w, params, is_training):
-  cond = tf.to_float(
-      tf.train.get_global_step()) < params.ramping_period + 10000
-  w_rotten = ramping_exprot(w, params, is_training)
-  if is_training and isinstance(w, tf.Variable):
-    w_rotten = tf.cond(
-        tf.logical_and(cond,
-                       tf.equal(tf.mod(tf.train.get_global_step(), 10000), 0)),
-        lambda: tf.assign(w, w_rotten), lambda: w_rotten)
-  return tf.where(cond, w_rotten, fixed_point(w, params, is_training))
-
-
-@register("ramping_exprot_to_fp_v2")
-def ramping_exprot_to_fp_v2(w, params, is_training):
-  cond = tf.to_float(
-      tf.train.get_global_step()) < params.ramping_period + 10000
-  w_rotten = tf.where(cond, ramping_exprot_v2(w, params, is_training),
-                      fixed_point(w, params, is_training))
-  if is_training and isinstance(w, tf.Variable):
-    w_rotten = tf.cond(
-        tf.logical_and(cond,
-                       tf.equal(tf.mod(tf.train.get_global_step(), 10000), 0)),
-        lambda: tf.assign(w, w_rotten), lambda: w_rotten)
-  return w_rotten
-
-
-@register("ramping_bitrot_exprot_to_fp")
-def ramping_bitrot_exprot_to_fp(w, params, is_training):
-  safe_zone = params.safe_zone
-  drop_rate = params.drop_rate
-
-  ramp = tf.to_float(tf.train.get_global_step()) / params.ramping_period
-  ramp = tf.minimum(1., ramp)
-  shift = (params.exp_ramp_top -
-           params.exp_ramp_bottom) * ramp + params.exp_ramp_bottom
-  shift = tf.to_int32(tf.round(shift))
-  bits_lost = (params.mant_ramp_top -
-               params.mant_ramp_bottom) * ramp + params.mant_ramp_bottom
-  bits_lost = tf.to_int32(tf.round(bits_lost))
-
-  cond = tf.to_float(
-      tf.train.get_global_step()) < params.ramping_period + 10000
-  w_rotten = apply_bitrot(
-      w,
-      mantissa_bits_dropped=bits_lost,
-      exponent_shift=shift,
-      exponent_safe_zone=safe_zone,
-      keep_prob=1 - drop_rate,
-      is_training=is_training)
-  if is_training and isinstance(w, tf.Variable):
-    w_rotten = tf.cond(
-        tf.logical_and(cond,
-                       tf.equal(tf.mod(tf.train.get_global_step(), 10000), 0)),
-        lambda: tf.assign(w, w_rotten), lambda: w_rotten)
-  return tf.where(cond, w_rotten, fixed_point(w, params, is_training))
-
-
-@register("binarize")
-def binarize(w, params, is_training):
-  probs = tf.maximum(0., tf.minimum(1., (w + 1.) / 2.))
-  mask = tf.random_uniform(tf.shape(w)) < probs
-  ones = tf.ones_like(w)
-
-  if is_training:
-    binarized = tf.where(mask, ones, -ones)
-    grad = tf.maximum(-1., tf.minimum(1., w))
-
-    if isinstance(w, tf.Variable):
-      deps = [tf.assign(w, grad)]
-    else:
-      deps = [tf.no_op()]
-
-    with tf.control_dependencies(deps):
-      binarized = grad + tf.stop_gradient(binarized - grad)
-  else:
-    binarized = tf.sign(w)
-
-  return binarized
-
 
 @register("targeted_weight")
 def targeted_weight_dropout(w, params, is_training):
   drop_rate = params.dropout
-  targ_perc = params.dropout_botk
+  targ_perc = params..targeted
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -346,14 +32,13 @@ def targeted_weight_dropout(w, params, is_training):
   mask = norm < threshold[None, :]
 
   if not is_training:
-    w = (1 - mask) * w
+    w = (1. - tf.to_float(mask)) * w
     w = tf.reshape(w, w_shape)
     return w
 
-  mask = tf.where(
-      tf.logical_and((1. - drop_rate) < tf.random_uniform(tf.shape(w)), mask),
-      tf.ones_like(w, dtype=tf.float32), tf.zeros_like(w, dtype=tf.float32))
-  w = (1 - mask) * w
+  mask = tf.to_float(
+      tf.logical_and(tf.random_uniform(tf.shape(w)) < drop_rate, mask))
+  w = (1. - mask) * w
   w = tf.reshape(w, w_shape)
   return w
 
@@ -361,7 +46,7 @@ def targeted_weight_dropout(w, params, is_training):
 @register("targeted_weight_random")
 def targeted_weight_random(w, params, is_training):
   drop_rate = params.dropout
-  targ_perc = params.dropout_botk
+  targ_perc = params..targeted
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -389,10 +74,10 @@ def targeted_weight_random(w, params, is_training):
 @register("ramping_targeted_weight_random")
 def ramping_targeted_weight_random(w, params, is_training):
   drop_rate = params.dropout
-  targ_perc = 0.95 * params.dropout_botk * tf.minimum(
+  targ_perc = 0.95 * params..targeted * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  targ_perc = targ_perc + 0.05 * params.dropout_botk * tf.maximum(
+  targ_perc = targ_perc + 0.05 * params..targeted * tf.maximum(
       0.0,
       tf.minimum(1.0,
                  (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
@@ -410,7 +95,7 @@ def ramping_targeted_weight_random(w, params, is_training):
     mask = tf.logical_and(switch < targ_perc,
                           tf.random_uniform(w.shape) < drop_rate)
   else:
-    mask = switch < targ_perc
+    mask = switch < (targ_perc * drop_rate)
 
   mask = 1. - tf.to_float(mask)
   mask = tf.stop_gradient(mask)
@@ -422,18 +107,17 @@ def ramping_targeted_weight_random(w, params, is_training):
 
 @register("targeted_weight_piecewise")
 def targeted_weight_piecewise_dropout(w, params, is_training):
-  drop_rate = params.dropout
+  drop_rate = params.dropout * tf.minimum(
+      1.0,
+      tf.to_float(tf.train.get_global_step()) / 40000.)
 
-  train_percent_20k = tf.minimum(
+  targ_perc = 0.95 * params..targeted * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  train_percent_40k = tf.minimum(
-      1.0, (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.)
-
-  targ_perc = tf.cond(
-      tf.less(tf.train.get_global_step(),
-              20000), lambda: train_percent_20k * 0.95,
-      lambda: 0.95 + train_percent_40k * (0.04 + params.td_nines))
+  targ_perc = targ_perc + 0.05 * params..targeted * tf.maximum(
+      0.0,
+      tf.minimum(1.0,
+                 (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -456,18 +140,17 @@ def targeted_weight_piecewise_dropout(w, params, is_training):
 
 @register("targeted_unit_piecewise")
 def targeted_unit_piecewise(w, params, is_training):
+  drop_rate = params.dropout * tf.minimum(
+      1.0,
+      tf.to_float(tf.train.get_global_step()) / 40000.)
 
-  train_percent_20k = tf.minimum(
+  targ_perc = 0.95 * params..targeted * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  train_percent_40k = tf.minimum(
-      1.0, (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.)
-
-  drop_rate = params.dropout
-  targ_perc = tf.cond(
-      tf.less(tf.train.get_global_step(),
-              20000), lambda: train_percent_20k * 0.8,
-      lambda: 0.8 + train_percent_40k * (0.1 + params.td_nines))
+  targ_perc = targ_perc + 0.05 * params..targeted * tf.maximum(
+      0.0,
+      tf.minimum(1.0,
+                 (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w.shape[-1]])
@@ -492,19 +175,18 @@ def targeted_unit_piecewise(w, params, is_training):
 @register("delayed_targeted_weight_prune")
 def delayed_targeted_weight(w, params, is_training):
   orig_w = w
-  targ_perc = params.dropout_botk
+  targ_perc = params..targeted
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
   norm = tf.abs(w)
   idx = tf.to_int32(targ_perc * tf.to_float(tf.shape(w)[0]))
   threshold = tf.contrib.framework.sort(norm, axis=0)[idx]
-  mask = (norm >= threshold)[None, :]
+  mask = norm >= threshold[None, :]
 
   w = w * tf.to_float(mask)
-  return tf.cond(
-      tf.greater(tf.train.get_global_step(), params.dropout_delay_steps),
-      lambda: tf.reshape(w, w_shape), lambda: orig_w)
+  cond = tf.to_float(tf.train.get_global_step() >= params.dropout_delay_steps)
+  return cond * tf.reshape(w, w_shape) + (1 - cond) * orig_w
 
 
 @register("delayed_targeted_unit_prune")
@@ -513,7 +195,7 @@ def delayed_targeted_unit(x, params, is_training):
 
   w = tf.reshape(x, [-1, x.shape[-1]])
   norm = tf.norm(w, axis=0)
-  idx = int(params.dropout_botk * int(w.shape[1]))
+  idx = int(params..targeted * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm >= threshold)[None, None]
@@ -535,7 +217,7 @@ def untargeted_weight(w, params, is_training):
 def targeted_unit_dropout(x, params, is_training):
   w = tf.reshape(x, [-1, x.shape[-1]])
   norm = tf.norm(w, axis=0)
-  idx = int(params.dropout_botk * int(w.shape[1]))
+  idx = int(params..targeted * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm < threshold)[None, :]
@@ -550,26 +232,30 @@ def targeted_unit_dropout(x, params, is_training):
 
 
 @register("targeted_unit_random")
-def targeted_unit_random(x, params, is_training):
+def targeted_unit_random(w, params, is_training):
   drop_rate = params.dropout
-  targ_perc = params.dropout_botk
+  targ_perc = params..targeted
 
-  w = tf.reshape(x, [-1, x.shape[-1]])
+  w_shape = w.shape
+  w = tf.reshape(w, [-1, w_shape[-1]])
 
-  switch = tf.Variable(
-      tf.random_uniform(tf.shape(w)), name="mask", trainable=False)
-  targeted_mask = tf.where((1. - targ_perc) < switch,
-                           tf.ones_like(w, dtype=tf.float32),
-                           tf.zeros_like(w, dtype=tf.float32))
-  targeted_weights = tf.random_uniform(tf.shape(w)) * targeted_mask
-  mask = tf.where((1. - drop_rate) < targeted_weights,
-                  tf.ones_like(w, dtype=tf.float32),
-                  tf.zeros_like(w, dtype=tf.float32))
+  switch = tf.get_variable(
+      "mask",
+      w.shape[-1],
+      initializer=tf.random_uniform_initializer(),
+      trainable=False)
 
-  mask = tf.stop_gradient(mask)
+  if is_training:
+    mask = tf.logical_and(switch < targ_perc,
+                          tf.random_uniform(switch.shape) < drop_rate)
+  else:
+    mask = switch < targ_perc
 
-  w = (1 - mask) * w
-  w = tf.reshape(w, x.shape)
+  mask = 1. - tf.to_float(mask)
+  mask = tf.stop_gradient(mask[None, :])
+
+  w = mask * w
+  w = tf.reshape(w, w_shape)
   return w
 
 
@@ -582,7 +268,7 @@ def targeted_ard_dropout(w, x, params, is_training):
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-2], w_shape[-1]])
   norm = tf.norm(w, axis=(0, 2)) * activation_norms
-  idx = int(params.dropout_botk * int(w.shape[1]))
+  idx = int(params..targeted * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm < threshold)[None, :, None]
@@ -612,7 +298,7 @@ def louizos_weight_dropout(w, params, is_training):
   with tf.variable_scope("louizos"):
     EPS = 1e-8
     noise = (1 - EPS) * tf.random_uniform(w.shape) + (EPS / 2)
-    rate = tf.log(1 - params.dropout) - tf.log(params.dropout)
+    rate = np.log(1 - params.dropout) - np.log(params.dropout)
     gates = tf.get_variable(
         "gates",
         shape=w.shape,
@@ -637,7 +323,7 @@ def louizos_unit_dropout(w, params, is_training):
     EPS = 1e-8
     noise = (1 - EPS) * \
         tf.random_uniform([w.shape.as_list()[-1]]) + (EPS / 2)
-    rate = tf.log(1 - params.dropout) - tf.log(params.dropout)
+    rate = np.log(1 - params.dropout) - np.log(params.dropout)
     gates = tf.get_variable(
         "gates",
         shape=[w.shape.as_list()[-1]],
@@ -717,16 +403,24 @@ def variational_unit_dropout(w, _, is_training):
 
 @register("smallify_dropout")
 def smallify_dropout(x, hparams, is_training):
-  with tf.variable_scope("smallify"):
+  with tf.variable_scope("smallify", reuse=tf.AUTO_REUSE):
     switch = tf.get_variable(
         "switch",
         shape=[1] * (len(x.shape) - 1) + [x.shape[-1]],
         initializer=tf.random_uniform_initializer())
 
-    mask = tf.Variable(tf.ones_like(switch), name="mask", trainable=False)
-    exp_avg = tf.Variable(tf.sign(switch), name="exp_avg", trainable=False)
-    exp_std = tf.Variable(
-        tf.zeros_like(switch), name="exp_std", trainable=False)
+    mask = tf.get_variable(
+        initializer=lambda: tf.ones_like(switch.initialized_value()),
+        name="mask",
+        trainable=False)
+    exp_avg = tf.get_variable(
+        initializer=lambda: tf.sign(switch.initialized_value()),
+        name="exp_avg",
+        trainable=False)
+    exp_std = tf.get_variable(
+        initializer=lambda: tf.zeros_like(switch.initialized_value()),
+        name="exp_std",
+        trainable=False)
     gates = switch * mask
 
     batch_sign = tf.sign(switch)
@@ -755,10 +449,18 @@ def smallify_weight_dropout(x, hparams, is_training):
     switch = tf.get_variable(
         "switch", shape=x.shape, initializer=tf.random_uniform_initializer())
 
-    mask = tf.Variable(tf.ones_like(switch), name="mask", trainable=False)
-    exp_avg = tf.Variable(tf.sign(switch), name="exp_avg", trainable=False)
-    exp_std = tf.Variable(
-        tf.zeros_like(switch), name="exp_std", trainable=False)
+    mask = tf.get_variable(
+        initializer=lambda: tf.ones_like(switch.initialized_value()),
+        name="mask",
+        trainable=False)
+    exp_avg = tf.get_variable(
+        initializer=lambda: tf.sign(switch.initialized_value()),
+        name="exp_avg",
+        trainable=False)
+    exp_std = tf.get_variable(
+        initializer=lambda: tf.zeros_like(switch.initialized_value()),
+        name="exp_std",
+        trainable=False)
     gates = switch * mask
 
     batch_sign = tf.sign(switch)

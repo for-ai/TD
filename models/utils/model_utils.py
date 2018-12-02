@@ -71,8 +71,7 @@ def conv(x,
 
     kernel = tf.get_variable(
         'DW', [filter_size, filter_size, in_filters, out_filters], tf.float32)
-
-    use_dropout = dropout and hparams.dropout_type is not None
+    use_dropout = hparams.dropout_type is not None and dropout
 
     # schit layer
     if schit_layer:
@@ -154,19 +153,17 @@ def weight_noise(hparams, learning_rate):
   return noise_ops
 
 
-def weight_decay(hparams, only_features=True):
+def weight_decay(hparams):
   """Apply weight decay to vars in var_list."""
   if not hparams.weight_decay_rate:
     return 0.
 
-  tf.logging.info("Applying weight decay, decay_rate: %0.5f",
-                  hparams.weight_decay_rate)
-
+  only_features = hparams.weight_decay_only_features
   var_list = [v for v in tf.trainable_variables()]
   weight_decays = []
   for v in var_list:
     # Weight decay.
-    is_feature = "DW" in v.name or "kernel" in v.name
+    is_feature = any(n in v.name for n in hparams.weight_decay_weight_names)
     if (not only_features) or is_feature:
       if hparams.initializer == "hadamard_unscaled":
         v_loss = tf.reduce_sum((tf.abs(v) - 1)**2) / 2
@@ -175,13 +172,6 @@ def weight_decay(hparams, only_features=True):
       weight_decays.append(v_loss)
 
   return tf.reduce_sum(weight_decays, axis=0) * hparams.weight_decay_rate
-
-def dkl_qp(log_alpha):
-  k1, k2, k3 = 0.63576, 1.8732, 1.48695
-  C = -k1
-  mdkl = k1 * tf.nn.sigmoid(k2 + k3 * log_alpha) - 0.5 * tf.log1p(
-      tf.exp(-log_alpha)) + C
-  return -tf.reduce_sum(mdkl)
 
 
 def axis_aligned_cost(logits, hparams):
@@ -285,8 +275,8 @@ def louizos_complexity_cost(params):
                            0)
   if params.dropout_type == "louizos_weight":
     complexity_cost = tf.nn.sigmoid(
-        concat_gates - params.louizos_beta *
-        tf.log(-1 * params.louizos_gamma / params.louizos_zeta))
+        concat_gates - params.louizos_beta * tf.
+        log(-1 * params.louizos_gamma / params.louizos_zeta))
   elif params.dropout_type == "louizos_unit":
     reshaped_gates = [
         tf.reshape(gates[name], [-1, gates[name].shape[-1]]) for name in names
@@ -304,8 +294,8 @@ def louizos_complexity_cost(params):
         group_sizes.shape[0], concat_gates.shape[0])
 
     complexity_cost = tf.cast(group_sizes, tf.float32) * tf.nn.sigmoid(
-        concat_gates - params.louizos_beta *
-        tf.log(-1 * params.louizos_gamma / params.louizos_zeta))
+        concat_gates - params.louizos_beta * tf.
+        log(-1 * params.louizos_gamma / params.louizos_zeta))
   return tf.reduce_sum(complexity_cost)
 
 
@@ -394,12 +384,13 @@ def combine(rand_uniform, rand_bernoulli, num_branches):
 
 
 def model_top(labels, preds, cost, lr, mode, hparams):
-  tf.summary.scalar(
-      "acc",
+  tf.summary.scalar("acc",
       tf.reduce_mean(
           tf.to_float(
-              tf.equal(labels, tf.argmax(preds, axis=-1,
-                                         output_type=tf.int32)))))
+              tf.equal(labels,
+                       tf.argmax(
+                           preds, axis=-1,
+                           output_type=tf.int32)))))
   tf.summary.scalar("loss", cost)
 
   gs = tf.train.get_global_step()

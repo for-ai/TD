@@ -40,42 +40,45 @@ def eval_model(FLAGS, hparam_name):
   hparams = get_hparams(hparam_name)
   hparams = hparams.parse(FLAGS.hparam_override)
   hparams = flags.update_hparams(FLAGS, hparams)
-  hparams.output_dir = os.path.join(FLAGS.output_dir, hparam_name,
-                                    str(FLAGS.copy))
 
   model_fn = get_model(hparams)
   _, _, test_input_fn = get_input_fns(hparams, generate=False)
-
-  run_config = tf.contrib.learn.RunConfig(
-      save_checkpoints_steps=FLAGS.eval_every)
 
   features, labels = test_input_fn()
   sess = tf.Session()
   tf.train.create_global_step()
   model_fn(features, labels, tf.estimator.ModeKeys.TRAIN)
   saver = tf.train.Saver()
-  print("Loading model from...", hparams.output_dir)
-  saver.restore(sess, tf.train.latest_checkpoint(hparams.output_dir))
+  ckpt_dir = tf.train.latest_checkpoint(hparams.output_dir)
+  print("Loading model from...", ckpt_dir)
+  saver.restore(sess, ckpt_dir)
 
   evals = []
   prune_percents = [float(i) for i in FLAGS.prune_percent.split(",")]
 
+  mode = "standard"
+  orig_weights = get_current_weights(sess)
+  louizos_masks, smallify_masks = None, None
+  if "louizos" in hparam_name:
+    louizos_masks = get_louizos_masks(sess, orig_weights)
+    mode = "louizos"
+  elif "smallify" in hparam_name:
+    smallify_masks = get_smallify_masks(sess, orig_weights)
+  elif "variational" in hparam_name:
+    mode = "variational"
+
   for prune_percent in prune_percents:
-    post_weights = get_current_weights(sess)
-    if "louizos" in hparam_name:
-      louizos_masks = get_louizos_masks(sess, post_weights)
-    else:
-      louizos_masks = None
-
-    if "smallify" in hparam_name:
-      smallify_masks = get_smallify_masks(sess, post_weights)
-    else:
-      smallify_masks = None
-
     if prune_percent > 0.0:
-      prune_fn = get_prune_fn(FLAGS.prune)(k=prune_percent)
+      prune_fn = get_prune_fn(FLAGS.prune)(mode, k=prune_percent)
+      w_copy = dict(orig_weights)
+      sm_copy = dict(smallify_masks) if smallify_masks is not None else None
+      lm_copy = dict(louizos_masks) if louizos_masks is not None else None
       post_weights_pruned, weight_counts = prune_weights(
-          prune_fn, post_weights, louizos_masks, smallify_masks, hparams)
+          prune_fn,
+          w_copy,
+          louizos_masks=lm_copy,
+          smallify_masks=sm_copy,
+          hparams=hparams)
       print("current weight counts at {}: {}".format(prune_percent,
                                                      weight_counts))
 
@@ -89,10 +92,12 @@ def eval_model(FLAGS, hparam_name):
     saver.save(sess, os.path.join(hparams.output_dir, "tmp", "model"))
     estimator = tf.estimator.Estimator(
         model_fn=tf.contrib.estimator.replicate_model_fn(model_fn),
-        model_dir=os.path.join(hparams.output_dir, "tmp"),
-        config=run_config)
-    print("Processing pruning {} of weights".format(prune_percent))
-    acc = estimator.evaluate(test_input_fn, FLAGS.eval_steps)['acc']
+        model_dir=os.path.join(hparams.output_dir, "tmp"))
+    print(
+        f"Processing pruning {prune_percent} of weights for {hparams.eval_steps} steps"
+    )  
+    acc = estimator.evaluate(test_input_fn, hparams.eval_steps)['acc']
+    print(f"Accuracy @ prune {100*prune_percent}% is {acc}")
     evals.append(acc)
   return evals
 
@@ -110,7 +115,7 @@ def _run(FLAGS):
     total_evals[hparam_name] = evals
     tf.reset_default_graph()
 
-  print("processed results: total_evals")
+  print("processed results:", total_evals)
   eval_file.close()
 
 

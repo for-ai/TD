@@ -83,7 +83,7 @@ def get_vgg(hparams, lr):
 
       conv4_1 = model_utils.conv(
           pool3, 3, 512, hparams, name="conv4_1", is_training=is_training)
-      conv4_1 = model_utils.batch_norm(conv4_1, is_training)
+      conv4_1 = model_utils.batch_norm(conv4_1, hparams, is_training)
       conv4_1 = tf.nn.relu(conv4_1)
 
       conv4_2 = model_utils.conv(
@@ -119,9 +119,11 @@ def get_vgg(hparams, lr):
 
       flat_x = tf.reshape(pool5, [hparams.batch_size, 512])
       fc6 = model_utils.batch_norm(
-          tf.layers.dense(flat_x, 4096, name="fc6"), hparams, is_training)
+          model_utils.dense(flat_x, 4096, hparams, is_training), hparams,
+          is_training)
       fc7 = model_utils.batch_norm(
-          tf.layers.dense(fc6, 4096, name="fc7"), hparams, is_training)
+          model_utils.dense(fc6, 4096, hparams, is_training), hparams,
+          is_training)
 
       logits = tf.layers.dense(fc7, hparams.num_classes, name="logits")
       probs = tf.nn.softmax(logits, axis=-1)

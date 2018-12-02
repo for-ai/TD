@@ -47,6 +47,8 @@ def default():
       smallify_delay=1000,
       linear_drop_rate=False,
       weight_decay_and_noise=False,
+      weight_decay_only_features=True,
+      weight_decay_weight_names=["DW", "kernel", "bias"],
       dropout_delay_steps=5000,
       grad_noise_scale=0.0,
       td_nines=0,
@@ -79,7 +81,6 @@ def default_cifar100():
   hps.data = "cifar100"
   hps.output_shape = [100]
   hps.num_classes = 100
-  hps.channels = 3
 
   return hps
 
@@ -90,10 +91,12 @@ def default_imagenet299():
   hps.data = "imagenet"
   hps.data_augmentations = ["imagenet_augmentation"]
   hps.epoch_size = 1281167
+
   hps.input_shape = [299, 299, 3]
   hps.channels = 3
   hps.output_shape = [1001]
   hps.num_classes = 1001
+
   return hps
 
 
@@ -101,6 +104,7 @@ def default_imagenet299():
 def default_imagenet224():
   hps = default_imagenet299()
   hps.input_shape = [224, 224, 3]
+
   return hps
 
 
@@ -108,6 +112,7 @@ def default_imagenet224():
 def default_imagenet64():
   hps = default_imagenet299()
   hps.input_shape = [64, 64, 3]
+
   return hps
 
 
@@ -115,4 +120,5 @@ def default_imagenet64():
 def default_imagenet32():
   hps = default_imagenet299()
   hps.input_shape = [32, 32, 3]
+
   return hps

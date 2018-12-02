@@ -25,7 +25,7 @@ def create_host_call(model_dir):
   gs_t = tf.reshape(tf.to_int32(tf.train.get_global_step()), [1])
   summary_kwargs = collections.OrderedDict()
   for t in summaries:
-    if t.op.type not in ["ScalarSummary"]:
+    if t.op.type not in ["ScalarSummary", "HistogramSummary"]:
       tf.logging.warn("Ignoring unsupported tf.Summary type %s" % t.op.type)
       continue
 
@@ -36,6 +36,8 @@ def create_host_call(model_dir):
       if tensor.dtype == tf.int64:
         tensor = tf.to_int32(tensor)
       summary_kwargs["ScalarSummary" + name] = tf.reshape(tensor, [1])
+    elif t.op.type == "HistogramSummary":
+      summary_kwargs["HistogramSummary" + name] = tf.reshape(tensor, [-1])
   # When no supported summaries are found, don't create host_call. Otherwise,
   # TPU outfeed queue would enqueue global_step while host_call doesn't dequeue
   # it, eventually causing hang.
@@ -60,6 +62,9 @@ def create_host_call(model_dir):
             name = name[len("ScalarSummary"):]
             tf.contrib.summary.scalar(
                 name, tf.reduce_mean(tf.to_float(value)), step=gs)
+          elif name.startswith("HistogramSummary"):
+            name = name[len("HistogramSummary"):]
+            tf.contrib.summary.histogram(name, value, step=gs)
           elif name.startswith("ImageSummary"):
             name = name[len("ImageSummary"):]
             tf.contrib.summary.image(name, value, step=gs)

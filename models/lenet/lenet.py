@@ -57,6 +57,9 @@ def get_lenet(hparams, lr):
       is_training = mode == tf.estimator.ModeKeys.TRAIN
       actvn = get_activation(hparams)
 
+if hparams.use_tpu and 'batch_size' in params.keys():
+        hparams.batch_size = params['batch_size']
+
       # input layer
       x = features["inputs"]
       x = model_utils.standardize_images(x)
@@ -85,33 +88,12 @@ def get_lenet(hparams, lr):
 
       # fc1
       with tf.variable_scope('fc1'):
-        W_fc1 = tf.get_variable(
-            "DW",
-            initializer=tf.truncated_normal_initializer(stddev=0.1),
-            shape=[h_pool2_flat.get_shape().as_list()[1], 120])
-        b_fc1 = tf.get_variable(
-            "Variable", initializer=tf.constant_initializer(0.1), shape=[120])
-        h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
+        h_fc1 = tf.nn.relu(
+            model_utils.dense(h_pool2_flat, 500, hparams, is_training))
 
       # fc2
       with tf.variable_scope('fc2'):
-        W_fc2 = tf.get_variable(
-            "DW",
-            initializer=tf.truncated_normal_initializer(stddev=0.1),
-            shape=[120, 84])
-        b_fc2 = tf.get_variable(
-            "Variable", initializer=tf.constant_initializer(0.1), shape=[84])
-        h_fc2 = tf.nn.relu(tf.matmul(h_fc1, W_fc2) + b_fc2)
-
-      # fc3
-      with tf.variable_scope("logit"):
-        W_fc3 = tf.get_variable(
-            "Variable",
-            initializer=tf.truncated_normal_initializer(stddev=0.1),
-            shape=[84, 10])
-        b_fc3 = tf.get_variable(
-            "Variable_1", initializer=tf.constant_initializer(0.1), shape=[10])
-        y = tf.nn.relu(tf.matmul(h_fc2, W_fc3) + b_fc3)
+                y = model_utils.dense(h_fc1, 10, hparams, is_training, dropout=False)
 
       if mode in [model_utils.ModeKeys.PREDICT, model_utils.ModeKeys.ATTACK]:
         predictions = {
@@ -122,18 +104,18 @@ def get_lenet(hparams, lr):
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-      loss = tf.losses.softmax_cross_entropy(labels, y)
+      loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=y)
 
       if hparams.axis_aligned_cost:
         negativity_cost, axis_alignedness_cost, one_bound = model_utils.axis_aligned_cost(
             y, hparams)
         masked_max = tf.abs(y) * (
             1 - tf.one_hot(tf.argmax(tf.abs(y), -1), hparams.num_classes))
-        tf.summary.scalar("logit_prior",
-                          tf.reduce_mean(
-                              tf.to_float(
-                                  tf.logical_and(masked_max >= 0.0,
-                                                 masked_max <= 0.1))))
+        tf.summary.scalar(
+            "logit_prior",
+              tf.reduce_mean(
+                  tf.to_float(
+                      tf.logical_and(masked_max >= 0.0, masked_max <= 0.1))))
         tf.summary.scalar("avg_max",
                           tf.reduce_mean(tf.reduce_max(tf.abs(y), axis=-1)))
         loss += hparams.axis_aligned_cost * tf.reduce_mean(

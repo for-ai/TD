@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import statistics
+from ...models.utils import model_utils
 
 _PRUNE_FN = dict()
 
@@ -16,64 +17,89 @@ def get_prune_fn(name):
 
 
 @register
-def one_shot(k=0.5):
+def weight(mode, k=0.5):
 
-  def prune(weight_dict, weight_key):
-    weights = weight_dict[weight_key]
-    w = weights.copy()
-    if len(weights.shape) == 4:
-      w = w.reshape([-1, weights.shape[-1]])
+  if mode == "standard":
 
-    abs_w = np.abs(w)
-    idx = int(k * abs_w.shape[0])
-    med = np.sort(abs_w, axis=0)[idx:idx + 1]
-    mask = (abs_w >= med).astype(float)
-    pruned_w = mask * w
+    def prune(weight_dict, weight_key):
+      weights = weight_dict[weight_key]
+      w = weights.copy()
+      if len(weights.shape) == 4:
+        w = w.reshape([-1, weights.shape[-1]])
 
-    return pruned_w, mask
+      abs_w = np.abs(w)
+      idx = int(k * abs_w.shape[0])
+      med = np.sort(abs_w, axis=0)[idx:idx + 1]
+      mask = (abs_w >= med).astype(float)
+      pruned_w = mask * w
+
+      return pruned_w, mask
+  elif mode == "variational":
+
+    def prune(weight_dict, weight_key):
+      weights = weight_dict[weight_key]
+      if k == 0.0:
+        return weights, None
+      log_alpha = weight_dict[weight_key.strip("DW") + "variational/log_alpha"]
+      w = weights.copy()
+      la = log_alpha.copy()
+      if len(weights.shape) == 4:
+        w = w.reshape([-1, weights.shape[-1]])
+        la = la.reshape([-1, weights.shape[-1]])
+
+      idx = int((1 - k) * la.shape[0])
+      med = np.sort(la, axis=0)[idx:idx + 1]
+      mask = (la < med).astype(float)
+      pruned_w = mask * w
+
+      return pruned_w, mask
+  elif mode == "louizos":
+
+    def prune(weight_dict, weight_key):
+      weights = weight_dict[weight_key]
+      w = weights.copy()
+      if len(weights.shape) == 4:
+        w = w.reshape([-1, weights.shape[-1]])
+
+      idx = int(k * w.shape[0])
+      med = np.sort(w, axis=0)[idx:idx + 1]
+      mask = (w >= med).astype(float)
+      pruned_w = mask * w
+
+      return pruned_w, mask
 
   return prune
 
 
 @register
-def variational(k=0.5):
+def unit(mode, k=0.5):
 
-  def prune(weight_dict, weight_key):
-    weights = weight_dict[weight_key]
-    if "fc" in weight_key or k == 0.0:
-      return weights, None
-    log_alpha = weight_dict[weight_key.strip("DW") + "variational/log_alpha"]
-    w = weights.copy()
-    la = log_alpha.copy()
-    if len(weights.shape) == 4:
-      w = w.reshape([-1, weights.shape[-1]])
-      la = la.reshape([-1, weights.shape[-1]])
+  if mode == "standard" or mode == "variational":
 
-    idx = int((1 - k) * la.shape[0])
-    med = np.sort(la, axis=0)[idx:idx + 1]
-    mask = (la < med).astype(float)
-    pruned_w = mask * w
+    def prune(weight_dict, weight_key):
+      weights = weight_dict[weight_key]
+      w = weights.copy()
+      if len(weights.shape) == 4:
+        w = w.reshape([-1, weights.shape[-1]])
+      norm = np.linalg.norm(w, axis=0)
+      idx = int(k * norm.shape[0])
+      med = np.sort(norm, axis=0)[idx]
+      mask = (norm >= med).astype(float)
+      pruned_w = mask * w
 
-    return pruned_w, mask
+      return pruned_w, mask
+  elif mode == "louizos":
 
-  return prune
+    def prune(weight_dict, weight_key):
+      weights = weight_dict[weight_key]
+      w = weights.copy()
+      assert len(weights.shape) == 1
+      idx = int(k * w.shape[0])
+      med = np.sort(w, axis=0)[idx]
+      mask = (w >= med).astype(float)
+      pruned_w = mask * w
 
-
-@register
-def unit_drop(k=0.5):
-
-  def prune(weight_dict, weight_key):
-    weights = weight_dict[weight_key]
-    w = weights.copy()
-    if len(weights.shape) == 4:
-      w = w.reshape([-1, weights.shape[-1]])
-    norm = np.linalg.norm(w, axis=0)
-    idx = int(k * norm.shape[0])
-    med = np.sort(norm, axis=0)[idx]
-    mask = (norm >= med).astype(float)
-    pruned_w = mask * w
-
-    return pruned_w, mask
+      return pruned_w, mask
 
   return prune
 
@@ -110,15 +136,10 @@ def prune_weights(prune_fn,
     orig_weights = dict(weights)
     for weight_name in weights:
       if weight_name not in louizos_masks.keys():
+        print("WARN louizos: mask not found for {}".format(weight_name))
         continue
-      masked_weights = 1 / (1 + np.exp(louizos_masks[weight_name]))
-      masked_weights = masked_weights * (
-          hparams.louizos_zeta - hparams.louizos_gamma) + hparams.louizos_gamma
-      masked_weights = np.minimum(1., np.maximum(0., masked_weights))
-      masked_weights = masked_weights * weights[weight_name]
-      weights[weight_name] = masked_weights
-
-  if smallify_masks:
+      weights[weight_name] = louizos_masks[weight_name]
+  elif smallify_masks:
     orig_weights = dict(weights)
     for weight_name in weights:
       if weight_name not in smallify_masks.keys():
@@ -129,6 +150,7 @@ def prune_weights(prune_fn,
 
   for weight_name in weights:
     if "variational" in weight_name:
+      print("WARN variational: not pruning {}".format(weight_name))
       continue
 
     pre_prune_nonzero += np.count_nonzero(weights[weight_name])
@@ -179,8 +201,8 @@ def is_prunable_weight(weight):
   blacklisted_tokens = ["logit", "fc", "init", "switch", "mask", "log_sigma"]
 
   contains_a_necessary_token = any(t in weight.name for t in necessary_tokens)
-  contains_a_blacklisted_token = any(t in weight.name
-                                     for t in blacklisted_tokens)
+  contains_a_blacklisted_token = any(
+      t in weight.name for t in blacklisted_tokens)
 
   is_prunable = contains_a_necessary_token and not contains_a_blacklisted_token
 

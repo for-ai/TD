@@ -9,9 +9,6 @@ from ..registry import register
 from ..utils import model_utils
 from ..utils.model_utils import ModeKeys
 from ...training import tpu
-import six
-
-from tensorflow.contrib.tpu.python.tpu import tpu_estimator, tpu_optimizer
 
 
 @register("resnet")
@@ -33,14 +30,6 @@ def get_resnet(hparams, lr):
 
     is_training = mode == tf.estimator.ModeKeys.TRAIN
 
-    def quantize(x, hparams, is_training):
-      if hparams.dropout_type is not None and any(
-          n in hparams.dropout_type
-          for n in ["bitrot", "binarize", "exprot", "fixed_point"]):
-        drop_fn = dropouts.get_dropout(hparams.dropout_type)
-        x = drop_fn(x, hparams, is_training)
-      return x
-
     def _residual(x, out_filter, stride, projection=False):
       """Residual unit with 2 sub layers."""
       is_variational = hparams.dropout_type is not None and "variational" in hparams.dropout_type
@@ -49,6 +38,7 @@ def get_resnet(hparams, lr):
       if not is_variational:
         x = model_utils.batch_norm(x, hparams, is_training)
         x = tf.nn.relu(x)
+
       if projection:
         orig_x = model_utils.conv(
             x,
@@ -58,7 +48,6 @@ def get_resnet(hparams, lr):
             is_training=is_training,
             strides=stride,
             name="shortcut")
-        orig_x = quantize(orig_x, hparams, is_training)
 
       with tf.variable_scope('sub1'):
         x = model_utils.conv(
@@ -70,9 +59,7 @@ def get_resnet(hparams, lr):
             strides=stride,
             name='conv1')
 
-        x = quantize(x, hparams, is_training)
         x = model_utils.batch_norm(x, hparams, is_training)
-        x = quantize(x, hparams, is_training)
         x = tf.nn.relu(x)
 
       with tf.variable_scope('sub2'):
@@ -85,15 +72,15 @@ def get_resnet(hparams, lr):
             strides=[1, 1, 1, 1],
             name='conv2')
 
-      x = quantize(x, hparams, is_training)
       x += orig_x
-      x = quantize(x, hparams, is_training)
 
       return x
 
     def _bottleneck_residual(x, out_filter, stride, projection=False):
       """Residual unit with 3 sub layers."""
+
       is_variational = hparams.dropout_type is not None and "variational" in hparams.dropout_type
+
       orig_x = x
       if not is_variational:
         x = model_utils.batch_norm(x, hparams, is_training)
@@ -108,7 +95,6 @@ def get_resnet(hparams, lr):
             is_training=is_training,
             strides=stride,
             name="shortcut")
-        orig_x = quantize(orig_x, hparams, is_training)
 
       with tf.variable_scope('sub1'):
         x = model_utils.conv(
@@ -142,7 +128,6 @@ def get_resnet(hparams, lr):
             strides=[1, 1, 1, 1],
             name='conv3')
 
-      tf.logging.debug('image after unit %s', x.get_shape())
       return orig_x + x
 
     def _l1():
@@ -152,7 +137,7 @@ def get_resnet(hparams, lr):
 
       costs = []
       for var in tf.trainable_variables():
-        if var.op.name.find(r'DW') > 0:
+        if "DW" in var.name and "logit" not in var.name:
           costs.append(tf.reduce_mean(tf.abs(var)))
 
       return tf.multiply(hparams.l1_norm, tf.add_n(costs))
@@ -170,6 +155,7 @@ def get_resnet(hparams, lr):
       assert x.get_shape().ndims == 4
       if hparams.data_format == "channels_last":
         return tf.reduce_mean(x, [1, 2])
+
       return tf.reduce_mean(x, [2, 3])
 
     def _stride_arr(stride):
@@ -194,13 +180,13 @@ def get_resnet(hparams, lr):
       # 3 and 16 picked from example implementation
       with tf.variable_scope('init'):
         x = features["inputs"]
-        strd = _stride_arr(2) if large_input else _stride_arr(1)
+        stride = _stride_arr(2) if large_input else _stride_arr(1)
         x = model_utils.conv(
             x,
             7,
             filters[0],
             hparams,
-            strides=strd,
+            strides=stride,
             dropout=False,
             name='init_conv')
         x = quantize(x, hparams, is_training)
@@ -237,9 +223,11 @@ def get_resnet(hparams, lr):
       if len(filters) == 5:
         with tf.variable_scope('unit_4_0'):
           x = res_func(x, filters[4], _stride_arr(strides[3]), True)
+
         for i in range(1, hparams.residual_units[3]):
           with tf.variable_scope('unit_4_%d' % i):
             x = res_func(x, filters[4], _stride_arr(1), False)
+
       x = model_utils.batch_norm(x, hparams, is_training)
       x = tf.nn.relu(x)
 
@@ -265,24 +253,7 @@ def get_resnet(hparams, lr):
             labels=labels, logits=logits)
         cost = tf.reduce_mean(xent, name='xent')
         if is_training:
-          if hparams.dropout_type and "variational" in hparams.dropout_type:
             cost += model_utils.weight_decay(hparams)
-
-          if hparams.logit_packing:
-            negativity_cost, axis_alignedness_cost, logit_bound = model_utils.axis_aligned_cost(
-                logits, hparams)
-            cost += hparams.logit_packing * tf.reduce_mean(
-                negativity_cost + axis_alignedness_cost + 20. * logit_bound)
-
-          if hparams.logit_squeezing:
-            cost += hparams.logit_squeezing * tf.reduce_mean(logits**2)
-            tf.summary.scalar(
-                "avg_logit", tf.reduce_mean(tf.reduce_max(tf.abs(logits), -1)))
-
-          if hparams.clp:
-            cost += hparams.clp * tf.reduce_mean(
-                (logits[:hparams.batch_size // 2] -
-                 logits[hparams.batch_size // 2:])**2)
 
           cost += _l1()
 
@@ -306,7 +277,7 @@ def get_resnet(hparams, lr):
                   if 'log_alpha' in n.name
               ])
               print("found %i logalphas" % len(log_alphas))
-              divergences = [model_utils.dkl_qp(la) for la in log_alphas]
+              divergences = [dropouts.dkl_qp(la) for la in log_alphas]
               # combine to form the ELBO
               N = float(50000)
               dkl = tf.reduce_sum(tf.stack(divergences))

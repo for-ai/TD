@@ -25,7 +25,7 @@ script:
   - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar10_resnet32_trgtd_unit
   
   - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_no_dropout
-  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_weight
-  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_trgtd_weight
-  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_unit
-  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_trgtd_unit
+  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_untargeted_dropout
+  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_targeted_dropout
+  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_untargeted_unit_dropout
+  - python3 -m codebase.train --eval_steps 1 --eval_every 1 --train_epochs -1 --env local --hparams cifar100_vgg16_targeted_unit_dropout

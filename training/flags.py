@@ -20,7 +20,7 @@ def validate_flags(FLAGS):
   return FLAGS
 
 
-def update_hparams(FLAGS, hparams):
+def update_hparams(FLAGS, hparams, hparams_name):
   hparams.model = FLAGS.model or hparams.model
   hparams.data = FLAGS.data or hparams.data
   hparams.env = FLAGS.env
@@ -30,7 +30,6 @@ def update_hparams(FLAGS, hparams):
 
   env = get_env(FLAGS.env)
   hparams.data_dir = os.path.join(FLAGS.data_dir or env.data_dir, hparams.data)
-  hparams.output_dir = FLAGS.output_dir or os.path.join(
-      env.output_dir, getpass.getuser(), FLAGS.hparams)
+  hparams.output_dir = FLAGS.output_dir
 
   return hparams
