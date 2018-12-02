@@ -46,6 +46,8 @@ def init_flags():
       "Warning: this will slow down execution.")
   tf.flags.DEFINE_boolean("tpu_dedicated", False,
                           "Do not use preemptible TPUs.")
+  tf.flags.DEFINE_string("data_dir", None, "The data directory.")
+  tf.flags.DEFINE_string("output_dir", None, "The output directory.")
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
