@@ -253,8 +253,7 @@ def get_resnet(hparams, lr):
             labels=labels, logits=logits)
         cost = tf.reduce_mean(xent, name='xent')
         if is_training:
-            cost += model_utils.weight_decay(hparams)
-
+          cost += model_utils.weight_decay(hparams)
           cost += _l1()
 
           if hparams.dropout_type is not None:
