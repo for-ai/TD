@@ -22,7 +22,7 @@ def get_dropout(name):
 @register("targeted_weight")
 def targeted_weight_dropout(w, params, is_training):
   drop_rate = params.drop_rate
-  targ_perc = params..targ_rate
+  targ_perc = params.targ_rate
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -46,7 +46,7 @@ def targeted_weight_dropout(w, params, is_training):
 @register("targeted_weight_random")
 def targeted_weight_random(w, params, is_training):
   drop_rate = params.drop_rate
-  targ_perc = params..targ_rate
+  targ_perc = params.targ_rate
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -74,10 +74,10 @@ def targeted_weight_random(w, params, is_training):
 @register("ramping_targeted_weight_random")
 def ramping_targeted_weight_random(w, params, is_training):
   drop_rate = params.drop_rate
-  targ_perc = 0.95 * params..targ_rate * tf.minimum(
+  targ_perc = 0.95 * params.targ_rate * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  targ_perc = targ_perc + 0.05 * params..targ_rate * tf.maximum(
+  targ_perc = targ_perc + 0.05 * params.targ_rate * tf.maximum(
       0.0,
       tf.minimum(1.0,
                  (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
@@ -111,10 +111,10 @@ def targeted_weight_piecewise_dropout(w, params, is_training):
       1.0,
       tf.to_float(tf.train.get_global_step()) / 40000.)
 
-  targ_perc = 0.95 * params..targ_rate * tf.minimum(
+  targ_perc = 0.95 * params.targ_rate * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  targ_perc = targ_perc + 0.05 * params..targ_rate * tf.maximum(
+  targ_perc = targ_perc + 0.05 * params.targ_rate * tf.maximum(
       0.0,
       tf.minimum(1.0,
                  (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
@@ -144,10 +144,10 @@ def targeted_unit_piecewise(w, params, is_training):
       1.0,
       tf.to_float(tf.train.get_global_step()) / 40000.)
 
-  targ_perc = 0.95 * params..targ_rate * tf.minimum(
+  targ_perc = 0.95 * params.targ_rate * tf.minimum(
       1.0,
       tf.to_float(tf.train.get_global_step()) / 20000.)
-  targ_perc = targ_perc + 0.05 * params..targ_rate * tf.maximum(
+  targ_perc = targ_perc + 0.05 * params.targ_rate * tf.maximum(
       0.0,
       tf.minimum(1.0,
                  (tf.to_float(tf.train.get_global_step()) - 20000.) / 20000.))
@@ -175,7 +175,7 @@ def targeted_unit_piecewise(w, params, is_training):
 @register("delayed_targeted_weight_prune")
 def delayed_targeted_weight(w, params, is_training):
   orig_w = w
-  targ_perc = params..targ_rate
+  targ_perc = params.targ_rate
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -195,7 +195,7 @@ def delayed_targeted_unit(x, params, is_training):
 
   w = tf.reshape(x, [-1, x.shape[-1]])
   norm = tf.norm(w, axis=0)
-  idx = int(params..targ_rate * int(w.shape[1]))
+  idx = int(params.targ_rate * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm >= threshold)[None, None]
@@ -217,7 +217,7 @@ def untargeted_weight(w, params, is_training):
 def targeted_unit_dropout(x, params, is_training):
   w = tf.reshape(x, [-1, x.shape[-1]])
   norm = tf.norm(w, axis=0)
-  idx = int(params..targ_rate * int(w.shape[1]))
+  idx = int(params.targ_rate * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm < threshold)[None, :]
@@ -234,7 +234,7 @@ def targeted_unit_dropout(x, params, is_training):
 @register("targeted_unit_random")
 def targeted_unit_random(w, params, is_training):
   drop_rate = params.drop_rate
-  targ_perc = params..targ_rate
+  targ_perc = params.targ_rate
 
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-1]])
@@ -268,7 +268,7 @@ def targeted_ard_dropout(w, x, params, is_training):
   w_shape = w.shape
   w = tf.reshape(w, [-1, w_shape[-2], w_shape[-1]])
   norm = tf.norm(w, axis=(0, 2)) * activation_norms
-  idx = int(params..targ_rate * int(w.shape[1]))
+  idx = int(params.targ_rate * int(w.shape[1]))
   sorted_norms = tf.contrib.framework.sort(norm)
   threshold = sorted_norms[idx]
   mask = (norm < threshold)[None, :, None]
