@@ -112,7 +112,7 @@ def warmup_linear_decay(gs, params):
   inv_decay = inv_base**(warmup_steps - tf.to_float(gs))
 
   return tf.cond(
-      tf.greater(gs, warmup_steps), lambda: linear_decay(params, delay=d),
+      tf.greater(gs, warmup_steps), lambda: linear_decay(gs, params, delay=d),
       lambda: inv_decay * params.learning_rate)
 
 
@@ -123,7 +123,7 @@ def warmup_constant(gs, params):
   inv_decay = inv_base**(warmup_steps - tf.to_float(gs))
 
   return tf.cond(
-      tf.greater(gs, warmup_steps), lambda: constant(params),
+      tf.greater(gs, warmup_steps), lambda: constant(gs, params),
       lambda: inv_decay * params.learning_rate)
 
 
@@ -135,7 +135,8 @@ def warmup_exponential_decay(gs, params):
   inv_decay = inv_base**(warmup_steps - tf.to_float(gs))
 
   return tf.cond(
-      tf.greater(gs, warmup_steps), lambda: exponential_decay(params, delay=d),
+      tf.greater(gs,
+                 warmup_steps), lambda: exponential_decay(gs, params, delay=d),
       lambda: inv_decay * params.learning_rate)
 
 
