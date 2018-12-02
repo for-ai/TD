@@ -38,7 +38,6 @@ def init_flags():
   tf.flags.DEFINE_integer("eval_steps", None,
                           "Number of evaluation steps to perform.")
 
-
 def eval_model(FLAGS, hparam_name):
   hparams = get_hparams(hparam_name)
   hparams = hparams.parse(FLAGS.hparam_override)

@@ -46,6 +46,8 @@ def init_flags():
                           "Do not use preemptible TPUs.")
   tf.flags.DEFINE_string("data_dir", None, "The data directory.")
   tf.flags.DEFINE_string("output_dir", None, "The output directory.")
+  tf.flags.DEFINE_integer("eval_every", 1000,
+                          "Number of steps between evaluations.")
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
