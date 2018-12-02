@@ -30,7 +30,8 @@ def init_flags():
                           "Runs current parameters this many times.")
   tf.flags.DEFINE_integer("train_epochs", None,
                           "Number of training epochs to perform.")
-
+  tf.flags.DEFINE_integer("eval_steps", None,
+                          "Number of evaluation steps to perform.")
   # TPU flags
   tf.flags.DEFINE_string("tpu_name", "", "Name of TPU(s)")
   tf.flags.DEFINE_integer(
